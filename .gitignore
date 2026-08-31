@@ -5,4 +5,4 @@ dist/
 coverage/
 .proofline/inventory.json
 .proofline/reports/
-
+.turbo/
