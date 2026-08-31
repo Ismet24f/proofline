@@ -33,7 +33,24 @@ export const testDefinitionSchema = z
     requirements: z.array(nonEmptyTrimmedString),
     status: z.enum(['ACTIVE', 'SKIPPED', 'DISABLED']),
   })
-  .strict();
+  .strict()
+  .superRefine((testDefinition, context) => {
+    if (testDefinition.id.startsWith('PL-T-') && testDefinition.stability !== 'EXPLICIT') {
+      context.addIssue({
+        code: 'custom',
+        path: ['stability'],
+        message: 'PL-T IDs require EXPLICIT stability',
+      });
+    }
+
+    if (testDefinition.id.startsWith('PL-P-') && testDefinition.stability !== 'PROVISIONAL') {
+      context.addIssue({
+        code: 'custom',
+        path: ['stability'],
+        message: 'PL-P IDs require PROVISIONAL stability',
+      });
+    }
+  });
 
 export const testInventorySchema = z
   .object({

@@ -37,12 +37,35 @@ describe('parseInventory', () => {
   ])('rejects invalid payload %#', (payload, field) => {
     expect(() => parseInventory(payload)).toThrow(field);
   });
-  it.each(['PL-T-00001', 'PL-P-aaaaaaaaaaaaaaaaaaaa'])('accepts stable test ID %s', (id) => {
-    expect(testDefinitionSchema.parse({ ...testDefinition, id }).id).toBe(id);
+
+  it.each([
+    ['PL-T-00001', 'EXPLICIT'],
+    ['PL-P-aaaaaaaaaaaaaaaaaaaa', 'PROVISIONAL'],
+  ])('accepts stable test ID %s', (id, stability) => {
+    expect(testDefinitionSchema.parse({ ...testDefinition, id, stability }).id).toBe(id);
   });
 
   it.each(['PL-T-1', 'PL-P-AAAAAAAAAAAAAAAAAAAA'])('rejects malformed stable test ID %s', (id) => {
     expect(() => testDefinitionSchema.parse({ ...testDefinition, id })).toThrow('id');
+  });
+
+  it.each([
+    [{ id: 'PL-T-00001', stability: 'PROVISIONAL' }, 'PL-T IDs require EXPLICIT stability'],
+    [{ id: 'PL-P-aaaaaaaaaaaaaaaaaaaa', stability: 'EXPLICIT' }, 'PL-P IDs require PROVISIONAL stability'],
+  ])('rejects test identity/stability mismatch: %s', (identity) => {
+    expect(() => testDefinitionSchema.parse({ ...testDefinition, ...identity })).toThrow('stability');
+  });
+
+  it('rejects duplicate stable test IDs in an inventory', () => {
+    expect(() =>
+      parseInventory({
+        schemaVersion: 1,
+        repository: 'acme/payments',
+        revision: 'a'.repeat(40),
+        generatedAt: '2026-08-31T12:00:00.000Z',
+        tests: [testDefinition, testDefinition],
+      }),
+    ).toThrow('duplicate stable test IDs');
   });
 
   it('requires oldPath exactly for renamed files', () => {

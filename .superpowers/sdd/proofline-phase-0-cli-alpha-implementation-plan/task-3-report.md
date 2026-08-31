@@ -14,8 +14,8 @@ versioned runtime schemas and exported TypeScript domain contracts.
   non-empty trimmed fields, stable test-ID formats, positive test lines,
   non-empty recommendation reasons, and conditional renamed-file `oldPath`.
 - Implemented `parseInventory(input)` with duplicate stable test-ID rejection.
-- Added package build, lint, typecheck, and source-only test scripts, plus the
-  Zod 4 runtime dependency and lockfile resolution.
+- Added package build, lint, typecheck, and test scripts, plus the Zod 4
+  runtime dependency and lockfile resolution.
 
 ## TDD evidence
 
@@ -63,8 +63,8 @@ pnpm test                                          # 2 packages, 10 tests passed
   exported through the package entry point.
 - Confirmed the `RENAMED` / `oldPath` rule rejects both absent required paths
   and irrelevant paths for other statuses.
-- Scoped the package test command to `src` so previously generated `dist`
-  tests cannot run a second time after a build.
+- Configured the production build separately from typecheck so test sources are
+  not emitted into `dist`.
 - `git diff --check` reported no whitespace errors.
 
 ## Concern
@@ -72,3 +72,48 @@ pnpm test                                          # 2 packages, 10 tests passed
 The ambient shell defaults to Node 18.17.1 while this workspace requires Node
 24. Commands need the available Node 24.20.0 runtime selected (or the local
 environment updated) to run Vitest 4 successfully.
+
+## Fix round 1: Review findings
+
+### Files changed
+
+- `packages/evidence-model/src/schemas.ts`
+- `packages/evidence-model/src/schemas.test.ts`
+- `packages/evidence-model/package.json`
+- `packages/evidence-model/tsconfig.json`
+- `packages/evidence-model/tsconfig.build.json`
+
+### Corrections
+
+- Added a cross-field test identity invariant: `PL-T-*` IDs require
+  `EXPLICIT`, and `PL-P-*` IDs require `PROVISIONAL`.
+- Added regression tests for each identity/stability mismatch and duplicate
+  inventory IDs.
+- Restored the frozen `test` script to `vitest run`.
+- Introduced `tsconfig.build.json`, excluding `src/**/*.test.ts` from emitted
+  production artifacts while retaining tests in the typecheck project used by
+  ESLint.
+
+### RED/GREEN evidence
+
+After adding the two identity mismatch tests, the focused test command failed
+as intended: 2 failed and 10 passed, because mismatched IDs were accepted.
+After the cross-field refinement and test fixture correction, the focused suite
+passed 12/12.
+
+### Verification
+
+All commands below used Node 24.20.0 via:
+
+```text
+env PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:/Users/ankora/.nvm/versions/node/v20.18.0/bin:/usr/local/bin:/usr/bin:/bin
+```
+
+```text
+pnpm --filter @proofline/evidence-model test       # 1 file, 12/12 passed
+pnpm --filter @proofline/evidence-model lint       # clean
+pnpm --filter @proofline/evidence-model typecheck  # clean
+pnpm --filter @proofline/evidence-model build      # tsc -p tsconfig.build.json
+find packages/evidence-model/dist -name '*.test.*' -print  # no output
+pnpm test                                          # 2 packages, 13/13 tests passed
+```
