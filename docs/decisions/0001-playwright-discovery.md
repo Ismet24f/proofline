@@ -33,8 +33,12 @@ explicit-ID annotations, or an invalid explicit ID is fatal. Fatal discovery
 suppresses the inventory.
 
 Static skip state is represented only when Playwright reports
-`expectedStatus === 'skipped'`. This decision does not claim discovery of
-runtime conditional skips.
+`expectedStatus === 'skipped'`. Playwright 1.62.1 injects an internal
+description-less `skip` control annotation for this static state; the reporter
+intentionally excludes only that marker because its meaning is already carried
+by `status`. Every other annotation, including `proofline.id` and unknown
+types, must have a non-empty trimmed description or discovery fails. This
+decision does not claim discovery of runtime conditional skips.
 
 ## Observed evidence
 
@@ -57,7 +61,13 @@ test retained all four annotations and derived metadata.
 
 The reporter E2E also duplicates `PL-T-00001` and separately adds `PL-T-1`.
 Both cases emit a clear fatal message, suppress the fixture inventory, and
-return a non-zero process status without running browser tests.
+return a non-zero process status without running browser tests. The E2E suite
+also proves the description-less internal static-skip marker is accepted solely
+as `SKIPPED` status, while description-less `proofline.id` and unknown
+annotations fail. A same-file source-location collision is exercised through a
+preceding reporter that gives two valid declarations the same source path; the
+line-aware merge key keeps them separate and `parseInventory` rejects the
+resulting provisional-ID collision.
 
 ## Exit-status deviation
 
@@ -65,10 +75,12 @@ The initial reporter implementation accumulated discovery errors and set
 `process.exitCode = 2` in `onExit`. Playwright 1.62.1 overwrote that value after
 `onExit` for a successful `--list` operation, so duplicate and invalid
 identities incorrectly exited 0. The smallest supported correction is the
-documented reporter `onEnd` status override: when an accumulated fatal failure
-exists, the reporter returns `{ status: 'failed' }`. Playwright then exits
-non-zero (its standard failure code is 1), while `onExit` still removes any
-output and reports the diagnostics. No unsupported process wrapper is used.
+documented reporter `onEnd` status override. `onEnd` now validates with
+`parseInventory`, writes atomically, removes stale output after every fatal
+validation or write failure, reports diagnostics, and returns
+`{ status: 'failed' }` when needed. Playwright then exits non-zero (its
+standard failure code is 1). No unsupported process wrapper or `onExit`
+exit-code mutation is used.
 
 ## Consequences
 

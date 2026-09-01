@@ -64,9 +64,20 @@ function titlePathFor(test: TestCase): string[] {
 }
 
 function annotationsFor(test: TestCase): Annotation[] {
-  return test.annotations.flatMap(({ description, type }) =>
-    description === undefined ? [] : [{ type, description }],
-  );
+  return test.annotations.flatMap(({ description, type }) => {
+    // Playwright injects this internal control marker for static test.skip()
+    // declarations. expectedStatus already carries its only inventory meaning.
+    if (type === 'skip' && description === undefined && test.expectedStatus === 'skipped') return [];
+
+    if (typeof description !== 'string' || description.length === 0 || description.trim() !== description) {
+      const file = toPosixPath(test.location.file);
+      throw new Error(
+        `annotation ${type} on ${file}:${String(test.location.line)} (${test.title}) must define a non-empty trimmed description`,
+      );
+    }
+
+    return [{ type, description }];
+  });
 }
 
 function annotationValues(annotations: readonly Annotation[], type: string): string[] {
@@ -86,7 +97,7 @@ function mapTest(config: FullConfig, metadata: ProoflineMetadata, test: TestCase
   const identity = resolveTestIdentity({ repository: metadata.repository, file, titlePath, annotations });
 
   return {
-    logicalKey: JSON.stringify([file, titlePath]),
+    logicalKey: JSON.stringify([file, test.location.line, titlePath]),
     definition: {
       ...identity,
       title: test.title,
@@ -133,17 +144,17 @@ export class ProoflineReporter implements Reporter {
 
     try {
       const metadata = readProoflineMetadata(config);
-      const testsById = new Map<string, MappedTest>();
+      const testsByLogicalKey = new Map<string, MappedTest>();
 
       for (const test of suite.allTests()) {
         try {
           const mapped = mapTest(config, metadata, test);
-          const existing = testsById.get(mapped.definition.id);
+          const existing = testsByLogicalKey.get(mapped.logicalKey);
 
           if (!existing) {
-            testsById.set(mapped.definition.id, mapped);
-          } else if (existing.logicalKey !== mapped.logicalKey) {
-            this.#fatalErrors.add(`duplicate stable test IDs: ${mapped.definition.id}`);
+            testsByLogicalKey.set(mapped.logicalKey, mapped);
+          } else if (existing.definition.id !== mapped.definition.id) {
+            this.#fatalErrors.add(`inconsistent identities for source test: ${mapped.definition.title}`);
           } else {
             existing.definition = {
               ...existing.definition,
@@ -156,50 +167,43 @@ export class ProoflineReporter implements Reporter {
       }
 
       if (this.#fatalErrors.size === 0) {
-        this.#inventory = parseInventory({
+        this.#inventory = {
           schemaVersion: 1,
           repository: metadata.repository,
           revision: metadata.revision,
           generatedAt: new Date().toISOString(),
-          tests: [...testsById.values()]
+          tests: [...testsByLogicalKey.values()]
             .map(({ definition }) => definition)
             .sort((left, right) => left.id.localeCompare(right.id)),
-        });
+        };
       }
     } catch (error) {
       this.#fatalErrors.add(error instanceof Error ? error.message : String(error));
     }
   }
 
-  onEnd(): Promise<{ status: 'failed' } | undefined> {
-    // Playwright overwrites process.exitCode after reporter.onExit. Its documented
-    // onEnd status override is the supported way to carry discovery failures into
-    // the authoritative command result.
-    return Promise.resolve(this.#fatalErrors.size > 0 ? { status: 'failed' } : undefined);
-  }
-
-  async onExit(): Promise<void> {
+  async onEnd(): Promise<{ status: 'failed' } | undefined> {
     const outputFile = this.#outputFile;
     if (!outputFile) {
       this.#fatalErrors.add('Playwright did not call reporter.onBegin');
     }
 
     if (this.#fatalErrors.size > 0 || !this.#inventory || !outputFile) {
-      if (outputFile) await rm(outputFile, { force: true });
-      for (const error of this.#fatalErrors) process.stderr.write(`Proofline discovery failed: ${error}\n`);
-      process.exitCode = 2;
-      return;
+      await this.#suppressInventory(outputFile);
+      this.#reportFatalErrors();
+      return { status: 'failed' };
     }
 
     try {
-      await writeInventoryAtomically(outputFile, this.#inventory);
+      await writeInventoryAtomically(outputFile, parseInventory(this.#inventory));
     } catch (error) {
-      await rm(outputFile, { force: true });
-      process.stderr.write(
-        `Proofline discovery failed: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
-      process.exitCode = 2;
+      this.#fatalErrors.add(error instanceof Error ? error.message : String(error));
+      await this.#suppressInventory(outputFile);
+      this.#reportFatalErrors();
+      return { status: 'failed' };
     }
+
+    return undefined;
   }
 
   printsToStdio(): boolean {
@@ -210,6 +214,22 @@ export class ProoflineReporter implements Reporter {
     const configured = this.#options.outputFile;
     if (!configured) return join(rootDir, '.proofline', 'inventory.json');
     return isAbsolute(configured) ? configured : resolve(rootDir, configured);
+  }
+
+  async #suppressInventory(outputFile: string | undefined): Promise<void> {
+    if (!outputFile) return;
+
+    try {
+      await rm(outputFile, { force: true });
+    } catch (error) {
+      this.#fatalErrors.add(
+        `could not remove inventory output: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  #reportFatalErrors(): void {
+    for (const error of this.#fatalErrors) process.stderr.write(`Proofline discovery failed: ${error}\n`);
   }
 }
 
