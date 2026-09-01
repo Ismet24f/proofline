@@ -92,13 +92,24 @@ function annotationValues(annotations: readonly Annotation[], type: string): str
   return sortedUnique(annotations.filter((annotation) => annotation.type === type).map(({ description }) => description));
 }
 
-function projectNameFor(test: TestCase): string {
+function projectNameFor(test: TestCase, unnamedProjects: Set<object>): string {
   const project = test.parent.project();
-  if (!project || project.name.length === 0) throw new Error(`test has no named Playwright project: ${test.title}`);
+  if (!project) throw new Error(`test has no Playwright project: ${test.title}`);
+  if (project.name.length === 0) {
+    unnamedProjects.add(project);
+    if (unnamedProjects.size > 1) throw new Error('multiple unnamed Playwright projects are ambiguous');
+    return '<default>';
+  }
+
   return project.name;
 }
 
-function mapTest(config: FullConfig, metadata: ProoflineMetadata, test: TestCase): MappedTest {
+function mapTest(
+  config: FullConfig,
+  metadata: ProoflineMetadata,
+  test: TestCase,
+  unnamedProjects: Set<object>,
+): MappedTest {
   const file = toPosixPath(relative(config.rootDir, test.location.file));
   const titlePath = titlePathFor(test);
   const annotations = annotationsFor(test);
@@ -112,7 +123,7 @@ function mapTest(config: FullConfig, metadata: ProoflineMetadata, test: TestCase
       titlePath,
       file,
       line: test.location.line,
-      projects: [projectNameFor(test)],
+      projects: [projectNameFor(test, unnamedProjects)],
       tags: sortedUnique(test.tags),
       annotations,
       capabilities: annotationValues(annotations, 'proofline.capability'),
@@ -156,17 +167,18 @@ export class ProoflineReporter implements Reporter {
   }
 
   onBegin(config: FullConfig, suite: Suite): void {
-    this.#outputFile = this.#resolveOutputFile(config.rootDir);
+    this.#outputFile = this.#resolveOutputFile(config);
     this.#inventory = undefined;
     this.#fatalErrors.clear();
 
     try {
       const metadata = readProoflineMetadata(config);
       const testsByLogicalKey = new Map<string, MappedTest>();
+      const unnamedProjects = new Set<object>();
 
       for (const test of suite.allTests()) {
         try {
-          const mapped = mapTest(config, metadata, test);
+          const mapped = mapTest(config, metadata, test, unnamedProjects);
           const existing = testsByLogicalKey.get(mapped.logicalKey);
 
           if (!existing) {
@@ -228,10 +240,12 @@ export class ProoflineReporter implements Reporter {
     return false;
   }
 
-  #resolveOutputFile(rootDir: string): string {
+  #resolveOutputFile(config: FullConfig): string {
+    const configFile = config.configFile;
+    const configDirectory = configFile ? dirname(configFile) : process.cwd();
     const configured = this.#options.outputFile;
-    if (!configured) return join(rootDir, '.proofline', 'inventory.json');
-    return isAbsolute(configured) ? configured : resolve(rootDir, configured);
+    if (!configured) return join(configDirectory, '.proofline', 'inventory.json');
+    return isAbsolute(configured) ? configured : resolve(configDirectory, configured);
   }
 
   async #suppressInventory(outputFile: string | undefined): Promise<void> {

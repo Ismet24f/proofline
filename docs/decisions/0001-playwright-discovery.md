@@ -22,9 +22,17 @@ identity.
 
 The reporter reads `repository` and a lowercase 40-character `revision` from
 `config.metadata.proofline`. Its default destination is
-`.proofline/inventory.json` beneath `config.rootDir`; a reporter `outputFile`
-option may override that location. Valid output is written via a sibling
-temporary file and rename.
+`.proofline/inventory.json` beneath the directory containing `config.configFile`.
+When Playwright has no config file, that base falls back to `process.cwd()`.
+A relative reporter `outputFile` override resolves from that same config
+directory; an absolute override remains absolute. Valid output is written via a
+sibling temporary file and rename.
+
+An unnamed implicit Playwright project is represented as the non-empty
+`<default>` sentinel in the inventory. More than one unnamed project is
+rejected as ambiguous. The sentinel collides with a real project literally
+named `<default>`: inventory consumers cannot distinguish that name from the
+implicit project, so configurations should reserve it for the sentinel.
 
 Identity prefers exactly one valid `proofline.id` annotation (`PL-T-` plus at
 least five digits). Otherwise it derives a provisional `PL-P-` identifier from

@@ -9,7 +9,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const demoDir = join(workspaceRoot, 'examples/playwright-demo');
-const inventoryFile = join(demoDir, 'tests/.proofline/inventory.json');
+const inventoryFile = join(demoDir, '.proofline/inventory.json');
+const testDirectoryInventoryFile = join(demoDir, 'tests/.proofline/inventory.json');
 const executionMarker = join(tmpdir(), `proofline-executed-${String(process.pid)}`);
 
 interface DiscoveryCommandOptions {
@@ -54,6 +55,7 @@ beforeAll(() => {
 describe('Playwright discovery reporter', () => {
   it('discovers one complete logical inventory without executing tests', async () => {
     await rm(inventoryFile, { force: true });
+    await rm(testDirectoryInventoryFile, { force: true });
     await rm(executionMarker, { force: true });
 
     const result = runDiscovery();
@@ -62,6 +64,7 @@ describe('Playwright discovery reporter', () => {
     await expect(readFile(executionMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
 
     const inventory = await loadInventory(inventoryFile);
+    await expect(readFile(testDirectoryInventoryFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     expect(inventory).toMatchObject({
       schemaVersion: 1,
       repository: 'proofline/playwright-demo',
@@ -100,11 +103,72 @@ describe('Playwright discovery reporter', () => {
     expect(duplicateTitles[0]?.id).not.toBe(duplicateTitles[1]?.id);
   });
 
+  it('represents the implicit Playwright project as <default>', async () => {
+    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-default-project-'));
+    const fixtureTests = join(fixtureDir, 'tests');
+    const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
+
+    try {
+      await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
+      await writeFile(
+        fixtureConfig,
+        `import { defineConfig } from '@playwright/test';\n\n` +
+          `export default defineConfig({\n` +
+          `  testDir: './tests',\n` +
+          `  metadata: { proofline: { repository: 'proofline/playwright-demo', revision: '0123456789abcdef0123456789abcdef01234567' } },\n` +
+          `});\n`,
+      );
+
+      const result = runDiscovery({ configFile: fixtureConfig });
+
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+      const inventory = await loadInventory(fixtureInventory);
+      expect(inventory.tests).toHaveLength(6);
+      expect(inventory.tests.every((item) => item.projects.join(',') === '<default>')).toBe(true);
+      await expect(readFile(join(fixtureTests, '.proofline/inventory.json'), 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves a relative output override from the configuration directory', async () => {
+    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-relative-output-'));
+    const fixtureTests = join(fixtureDir, 'tests');
+    const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
+    const fixtureInventory = join(fixtureDir, 'custom-output/inventory.json');
+
+    try {
+      await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
+      await writeFile(
+        fixtureConfig,
+        `import { defineConfig } from '@playwright/test';\n\n` +
+          `export default defineConfig({\n` +
+          `  testDir: './tests',\n` +
+          `  metadata: { proofline: { repository: 'proofline/playwright-demo', revision: '0123456789abcdef0123456789abcdef01234567' } },\n` +
+          `  reporter: [['@proofline/playwright-reporter', { outputFile: './custom-output/inventory.json' }]],\n` +
+          `});\n`,
+      );
+
+      const result = runDiscovery({ configFile: fixtureConfig, useConfigReporter: true });
+
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+      await expect(loadInventory(fixtureInventory)).resolves.toMatchObject({ schemaVersion: 1 });
+      await expect(readFile(join(fixtureTests, 'custom-output/inventory.json'), 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
   it('suppresses output and exits non-zero for duplicate stable test IDs', async () => {
     const fixtureDir = await mkdtemp(join(demoDir, '.tmp-duplicate-'));
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
-    const fixtureInventory = join(fixtureTests, '.proofline/inventory.json');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
 
     try {
       await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
@@ -129,7 +193,7 @@ describe('Playwright discovery reporter', () => {
     const fixtureDir = await mkdtemp(join(demoDir, '.tmp-invalid-id-'));
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
-    const fixtureInventory = join(fixtureTests, '.proofline/inventory.json');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
 
     try {
       await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
@@ -157,7 +221,7 @@ describe('Playwright discovery reporter', () => {
     const fixtureDir = await mkdtemp(join(demoDir, '.tmp-missing-description-'));
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
-    const fixtureInventory = join(fixtureTests, '.proofline/inventory.json');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
 
     try {
       await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
@@ -183,7 +247,7 @@ describe('Playwright discovery reporter', () => {
     const fixtureDir = await mkdtemp(join(demoDir, '.tmp-non-skipped-marker-'));
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
-    const fixtureInventory = join(fixtureTests, '.proofline/inventory.json');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
 
     try {
       await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
@@ -228,7 +292,7 @@ describe('Playwright discovery reporter', () => {
     const fixtureDir = await mkdtemp(join(demoDir, '.tmp-duplicate-skip-marker-'));
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
-    const fixtureInventory = join(fixtureTests, '.proofline/inventory.json');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
 
     try {
       await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
@@ -253,7 +317,7 @@ describe('Playwright discovery reporter', () => {
     const fixtureDir = await mkdtemp(join(demoDir, '.tmp-provisional-collision-'));
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
-    const fixtureInventory = join(fixtureTests, '.proofline/inventory.json');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
 
     try {
       await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });

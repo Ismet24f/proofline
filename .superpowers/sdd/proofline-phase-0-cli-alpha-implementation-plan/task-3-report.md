@@ -80,7 +80,6 @@ environment updated) to run Vitest 4 successfully.
 - `packages/evidence-model/src/schemas.ts`
 - `packages/evidence-model/src/schemas.test.ts`
 - `packages/evidence-model/package.json`
-- `packages/evidence-model/tsconfig.json`
 - `packages/evidence-model/tsconfig.build.json`
 
 ### Corrections
