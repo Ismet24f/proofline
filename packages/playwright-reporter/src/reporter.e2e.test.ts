@@ -11,6 +11,12 @@ const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const demoDir = join(workspaceRoot, 'examples/playwright-demo');
 const inventoryFile = join(demoDir, '.proofline/inventory.json');
 const testDirectoryInventoryFile = join(demoDir, 'tests/.proofline/inventory.json');
+const twoUnnamedProjectsFixtureDir = join(
+  workspaceRoot,
+  'packages/playwright-reporter/e2e-fixtures/two-unnamed-projects',
+);
+const twoUnnamedProjectsConfig = join(twoUnnamedProjectsFixtureDir, 'playwright.config.ts');
+const twoUnnamedProjectsInventory = join(twoUnnamedProjectsFixtureDir, '.proofline/inventory.json');
 const executionMarker = join(tmpdir(), `proofline-executed-${String(process.pid)}`);
 
 interface DiscoveryCommandOptions {
@@ -132,6 +138,16 @@ describe('Playwright discovery reporter', () => {
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
+  });
+
+  it('rejects multiple unnamed Playwright projects without writing an inventory', async () => {
+    await rm(twoUnnamedProjectsInventory, { force: true });
+
+    const result = runDiscovery({ configFile: twoUnnamedProjectsConfig });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr + result.stdout).toContain('multiple unnamed Playwright projects are ambiguous');
+    await expect(readFile(twoUnnamedProjectsInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('resolves a relative output override from the configuration directory', async () => {
