@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, rename, rm } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { parseInventory, type Annotation, type TestDefinition, type TestInventory } from '@proofline/evidence-model';
@@ -64,10 +64,18 @@ function titlePathFor(test: TestCase): string[] {
 }
 
 function annotationsFor(test: TestCase): Annotation[] {
+  let descriptionlessSkipMarkers = 0;
+
   return test.annotations.flatMap(({ description, type }) => {
-    // Playwright injects this internal control marker for static test.skip()
-    // declarations. expectedStatus already carries its only inventory meaning.
-    if (type === 'skip' && description === undefined && test.expectedStatus === 'skipped') return [];
+    if (type === 'skip' && description === undefined && test.expectedStatus === 'skipped') {
+      descriptionlessSkipMarkers += 1;
+      if (descriptionlessSkipMarkers === 1) return [];
+
+      const file = toPosixPath(test.location.file);
+      throw new Error(
+        `multiple description-less skip annotations on ${file}:${String(test.location.line)} (${test.title})`,
+      );
+    }
 
     if (typeof description !== 'string' || description.length === 0 || description.trim() !== description) {
       const file = toPosixPath(test.location.file);
@@ -118,12 +126,22 @@ function mapTest(config: FullConfig, metadata: ProoflineMetadata, test: TestCase
 async function writeInventoryAtomically(outputFile: string, inventory: TestInventory): Promise<void> {
   const temporaryFile = `${outputFile}.${String(process.pid)}.${randomUUID()}.tmp`;
   await mkdir(dirname(outputFile), { recursive: true });
+  let ownsTemporaryFile = false;
+  let temporaryHandle: Awaited<ReturnType<typeof open>> | undefined;
 
   try {
-    await writeFile(temporaryFile, `${JSON.stringify(inventory, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+    temporaryHandle = await open(temporaryFile, 'wx');
+    ownsTemporaryFile = true;
+    await temporaryHandle.writeFile(`${JSON.stringify(inventory, null, 2)}\n`, 'utf8');
+    await temporaryHandle.close();
+    temporaryHandle = undefined;
     await rename(temporaryFile, outputFile);
   } finally {
-    await rm(temporaryFile, { force: true });
+    try {
+      await temporaryHandle?.close();
+    } finally {
+      if (ownsTemporaryFile) await rm(temporaryFile, { force: true });
+    }
   }
 }
 

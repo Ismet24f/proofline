@@ -16,8 +16,9 @@ schemas; this integration validates every generated inventory with
 
 Use a custom Playwright reporter during `playwright test --list`. In
 `onBegin`, map `suite.allTests()` into Proofline definitions and merge entries
-with the same file and title path across projects. Project names are sorted and
-deduplicated; the project name is deliberately excluded from identity.
+with the same file, source line, and title path across projects. Project names
+are sorted and deduplicated; the project name is deliberately excluded from
+identity.
 
 The reporter reads `repository` and a lowercase 40-character `revision` from
 `config.metadata.proofline`. Its default destination is
@@ -35,9 +36,10 @@ suppresses the inventory.
 Static skip state is represented only when Playwright reports
 `expectedStatus === 'skipped'`. Playwright 1.62.1 injects an internal
 description-less `skip` control annotation for this static state; the reporter
-intentionally excludes only that marker because its meaning is already carried
-by `status`. Every other annotation, including `proofline.id` and unknown
-types, must have a non-empty trimmed description or discovery fails. This
+allows and excludes exactly one such marker because its meaning is already
+carried by `status`. Zero is tolerated for a future Playwright version that
+does not emit it. A second description-less `skip` marker, a marker on a
+non-skipped test, and every other description-less annotation are fatal. This
 decision does not claim discovery of runtime conditional skips.
 
 ## Observed evidence
@@ -64,7 +66,8 @@ Both cases emit a clear fatal message, suppress the fixture inventory, and
 return a non-zero process status without running browser tests. The E2E suite
 also proves the description-less internal static-skip marker is accepted solely
 as `SKIPPED` status, while description-less `proofline.id` and unknown
-annotations fail. A same-file source-location collision is exercised through a
+annotations fail. It also proves that a second user-supplied description-less
+`skip` marker fails. A same-file source-location collision is exercised through a
 preceding reporter that gives two valid declarations the same source path; the
 line-aware merge key keeps them separate and `parseInventory` rejects the
 resulting provisional-ID collision.
@@ -80,7 +83,9 @@ documented reporter `onEnd` status override. `onEnd` now validates with
 validation or write failure, reports diagnostics, and returns
 `{ status: 'failed' }` when needed. Playwright then exits non-zero (its
 standard failure code is 1). No unsupported process wrapper or `onExit`
-exit-code mutation is used.
+exit-code mutation is used. The atomic writer claims its sibling temporary file
+with exclusive create before writing it, and removes only a temporary file it
+owns after either write or rename failure.
 
 ## Consequences
 

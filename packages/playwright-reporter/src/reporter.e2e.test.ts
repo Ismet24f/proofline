@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseInventory, type TestInventory } from '@proofline/evidence-model';
@@ -179,6 +179,76 @@ describe('Playwright discovery reporter', () => {
     }
   });
 
+  it('rejects a description-less skip marker when the resolved status is not skipped', async () => {
+    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-non-skipped-marker-'));
+    const fixtureTests = join(fixtureDir, 'tests');
+    const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
+    const fixtureInventory = join(fixtureTests, '.proofline/inventory.json');
+
+    try {
+      await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
+      await writeFile(
+        join(fixtureTests, 'non-skipped-marker.spec.ts'),
+        `import { test } from '@playwright/test';\n\n` +
+          `test('rejects a non-skipped marker', { annotation: { type: 'skip' } }, () => {});\n`,
+      );
+      await writeFile(
+        join(fixtureDir, 'non-skipped-marker-reporter.mjs'),
+        `export default class NonSkippedMarkerReporter {\n` +
+          `  onBegin(_config, suite) {\n` +
+          `    const target = suite.allTests().find((test) => test.title === 'rejects a non-skipped marker');\n` +
+          `    if (!target) throw new Error('missing non-skipped marker fixture');\n` +
+          `    target.expectedStatus = 'passed';\n` +
+          `  }\n` +
+          `}\n`,
+      );
+      await writeFile(
+        fixtureConfig,
+        `import { defineConfig } from '@playwright/test';\n\n` +
+          `export default defineConfig({\n` +
+          `  testDir: './tests',\n` +
+          `  metadata: { proofline: { repository: 'proofline/playwright-demo', revision: '0123456789abcdef0123456789abcdef01234567' } },\n` +
+          `  projects: [{ name: 'chromium' }, { name: 'firefox' }],\n` +
+          `  reporter: [['./non-skipped-marker-reporter.mjs'], ['@proofline/playwright-reporter']],\n` +
+          `});\n`,
+      );
+
+      const result = runDiscovery({ configFile: fixtureConfig, useConfigReporter: true });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr + result.stdout).toContain('annotation skip');
+      expect(result.stderr + result.stdout).toContain('rejects a non-skipped marker');
+      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a user-added description-less skip marker on a statically skipped test', async () => {
+    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-duplicate-skip-marker-'));
+    const fixtureTests = join(fixtureDir, 'tests');
+    const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
+    const fixtureInventory = join(fixtureTests, '.proofline/inventory.json');
+
+    try {
+      await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
+      await cp(join(demoDir, 'playwright.config.ts'), fixtureConfig);
+      await writeFile(
+        join(fixtureTests, 'duplicate-skip-marker.spec.ts'),
+        `import { test } from '@playwright/test';\n\n` +
+          `test.skip('rejects two description-less skip markers', { annotation: { type: 'skip' } }, () => {});\n`,
+      );
+
+      const result = runDiscovery({ configFile: fixtureConfig });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr + result.stdout).toContain('multiple description-less skip annotations');
+      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects matching provisional IDs from separate same-file declarations', async () => {
     const fixtureDir = await mkdtemp(join(demoDir, '.tmp-provisional-collision-'));
     const fixtureTests = join(fixtureDir, 'tests');
@@ -245,6 +315,37 @@ describe('Playwright discovery reporter', () => {
       expect(result.stderr + result.stdout).toContain('Proofline discovery failed:');
       await expect(readFile(blockedOutput, 'utf8')).resolves.toBe('not a directory\n');
       await expect(readFile(join(blockedOutput, 'inventory.json'), 'utf8')).rejects.toBeDefined();
+    } finally {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes the sibling temp file when atomic rename fails', async () => {
+    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-rename-failure-'));
+    const fixtureTests = join(fixtureDir, 'tests');
+    const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
+    const outputDirectory = join(fixtureDir, 'inventory-output');
+
+    try {
+      await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
+      await mkdir(outputDirectory);
+      await writeFile(
+        fixtureConfig,
+        `import { defineConfig } from '@playwright/test';\n\n` +
+          `export default defineConfig({\n` +
+          `  testDir: './tests',\n` +
+          `  metadata: { proofline: { repository: 'proofline/playwright-demo', revision: '0123456789abcdef0123456789abcdef01234567' } },\n` +
+          `  projects: [{ name: 'chromium' }, { name: 'firefox' }],\n` +
+          `  reporter: [['@proofline/playwright-reporter', { outputFile: ${JSON.stringify(outputDirectory)} }]],\n` +
+          `});\n`,
+      );
+
+      const result = runDiscovery({ configFile: fixtureConfig, useConfigReporter: true });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr + result.stdout).toContain('Proofline discovery failed:');
+      await expect(readdir(outputDirectory)).resolves.toEqual([]);
+      expect((await readdir(fixtureDir)).filter((name) => name.startsWith(`${basename(outputDirectory)}.`))).toEqual([]);
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
