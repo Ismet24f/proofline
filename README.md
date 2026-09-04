@@ -13,7 +13,7 @@ Proofline currently generates a schema-valid inventory of a Playwright suite thr
 The packages in this repository are not yet published. Install and use the source workspace; this is not an npm consumer installation flow.
 
 ```sh
-git clone <repository-url>
+git clone https://github.com/Ismet24f/proofline.git
 cd proofline
 corepack enable
 pnpm install --frozen-lockfile
