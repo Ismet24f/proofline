@@ -1,9 +1,9 @@
 # Proofline Narrow-Wedge and PR Remediation Design
 
 **Status:** APPROVED
-**Date:** 2026-09-04  
-**Applies to:** PR #1, `feature/phase-0-cli-alpha`  
-**Product stage:** Technical foundation and problem validation  
+**Date:** 2026-09-04
+**Applies to:** PR #1, `feature/phase-0-cli-alpha`
+**Product stage:** Technical foundation and problem validation
 **License decision:** Apache License 2.0
 
 ## 1. Decision
