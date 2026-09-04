@@ -146,7 +146,34 @@ export const evidenceAssertionSchema = z
     evidenceIds: z.array(nonEmptyTrimmedString),
     message: nonEmptyTrimmedString.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((assertion, context) => {
+    const hasEvidence = assertion.evidenceIds.length > 0;
+    const hasExplanation = assertion.message !== undefined;
+
+    if (
+      ['VERIFIED', 'CODE_VALIDATED', 'ACCEPTED_RISK'].includes(assertion.state) &&
+      !hasEvidence
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['evidenceIds'],
+        message: `${assertion.state} requires evidence`,
+      });
+    }
+
+    if (
+      ['FAILED', 'BLOCKED', 'NOT_AFFECTED'].includes(assertion.state) &&
+      !hasEvidence &&
+      !hasExplanation
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['evidenceIds'],
+        message: `${assertion.state} requires evidence or a message`,
+      });
+    }
+  });
 
 export const policyViolationSchema = z
   .object({
@@ -168,7 +195,42 @@ export const releaseDecisionSchema = z
     assertions: z.array(evidenceAssertionSchema),
     violations: z.array(policyViolationSchema),
   })
-  .strict();
+  .strict()
+  .superRefine((decision, context) => {
+    const hasDisqualifyingAssertion = decision.assertions.some((assertion) =>
+      ['FAILED', 'BLOCKED', 'UNTESTED', 'UNKNOWN'].includes(assertion.state),
+    );
+    const hasHoldAssertion = decision.assertions.some((assertion) =>
+      ['FAILED', 'BLOCKED'].includes(assertion.state),
+    );
+    const hasIncompleteAssertion = decision.assertions.some((assertion) =>
+      ['UNTESTED', 'UNKNOWN'].includes(assertion.state),
+    );
+
+    if (decision.verdict === 'PASS' && (decision.violations.length > 0 || hasDisqualifyingAssertion)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['verdict'],
+        message: 'PASS requires zero violations and no FAILED, BLOCKED, UNTESTED, or UNKNOWN assertions',
+      });
+    }
+
+    if (decision.verdict === 'HOLD' && decision.violations.length === 0 && !hasHoldAssertion) {
+      context.addIssue({
+        code: 'custom',
+        path: ['verdict'],
+        message: 'HOLD requires a violation, FAILED assertion, or BLOCKED assertion',
+      });
+    }
+
+    if (decision.verdict === 'INCOMPLETE' && !hasIncompleteAssertion) {
+      context.addIssue({
+        code: 'custom',
+        path: ['verdict'],
+        message: 'INCOMPLETE requires an UNTESTED or UNKNOWN assertion',
+      });
+    }
+  });
 
 export function parseInventory(input: unknown): TestInventory {
   const inventory = testInventorySchema.parse(input);
