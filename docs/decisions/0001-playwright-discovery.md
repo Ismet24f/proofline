@@ -52,11 +52,11 @@ fatal. This decision does not claim discovery of runtime conditional skips.
 
 ## Observed evidence
 
-The accepted run used Node `v24.20.0` and Playwright `1.62.1`:
+The accepted run used Node `v24.20.0` and Playwright `1.62.1`. With Node 24
+and pnpm 10 available on `PATH`, run the command from the repository root:
 
 ```sh
-PATH='/Users/ankora/.nvm/versions/node/v24.20.0/bin:'"$PATH" \
-  pnpm --dir examples/playwright-demo exec playwright test --list \
+pnpm --dir examples/playwright-demo exec playwright test --list \
   --reporter=@proofline/playwright-reporter
 ```
 

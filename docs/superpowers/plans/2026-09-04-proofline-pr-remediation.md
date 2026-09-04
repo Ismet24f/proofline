@@ -413,7 +413,7 @@ Run:
 
 ```sh
 git ls-files | rg '(^\.superpowers/|task-[0-9]+-(brief|report)\.md$)'
-rg -n '/Users/|/home/|[A-Za-z]:\\\\Users\\\\' README.md docs package.json packages examples .github
+rg -n '[/]Users/|[/]home/|[A-Za-z]:[\\\\]{2}Users[\\\\]{2}' README.md docs package.json packages examples .github
 ```
 
 Expected: both searches return no matches. The `.superpowers/` ignore rule remains.

@@ -194,7 +194,7 @@ Manually calculate the result using only `decision-gate.md`. Expected outcomes a
 ### Step 2: Run privacy and fabrication checks
 
 ```sh
-rg -n '/Users/|/home/|[A-Za-z]:\\\\Users\\\\|github\.com/[^ )]+/[^ )]+' docs/validation
+rg -n '[/]Users/|[/]home/|[A-Za-z]:[\\\\]{2}Users[\\\\]{2}|github[.]com/[^ )]+/[^ )]+' docs/validation
 git diff --check
 git status --short
 ```
