@@ -42,13 +42,12 @@ explicit-ID annotations, or an invalid explicit ID is fatal. Fatal discovery
 suppresses the inventory.
 
 Static skip state is represented only when Playwright reports
-`expectedStatus === 'skipped'`. Playwright 1.62.1 injects an internal
-description-less `skip` control annotation for this static state; the reporter
-allows and excludes exactly one such marker because its meaning is already
-carried by `status`. Zero is tolerated for a future Playwright version that
-does not emit it. A second description-less `skip` marker, a marker on a
-non-skipped test, and every other description-less annotation are fatal. This
-decision does not claim discovery of runtime conditional skips.
+`expectedStatus === 'skipped'`. Playwright 1.62.1 emits description-less
+framework control annotations for `skip`, `fixme`, `fail`, and `slow`; the
+reporter excludes any description-less annotation of those four types because
+they are framework controls rather than Proofline metadata. Described framework
+controls remain normal metadata. Every other description-less annotation is
+fatal. This decision does not claim discovery of runtime conditional skips.
 
 ## Observed evidence
 
@@ -71,14 +70,16 @@ test retained all four annotations and derived metadata.
 
 The reporter E2E also duplicates `PL-T-00001` and separately adds `PL-T-1`.
 Both cases emit a clear fatal message, suppress the fixture inventory, and
-return a non-zero process status without running browser tests. The E2E suite
-also proves the description-less internal static-skip marker is accepted solely
-as `SKIPPED` status, while description-less `proofline.id` and unknown
-annotations fail. It also proves that a second user-supplied description-less
-`skip` marker fails. A same-file source-location collision is exercised through a
-preceding reporter that gives two valid declarations the same source path; the
-line-aware merge key keeps them separate and `parseInventory` rejects the
-resulting provisional-ID collision.
+return a non-zero process status without running browser tests. Playwright 1.62.1
+subprocess fixtures prove that ordinary `skip`, `fixme`, `fail`, and `slow`
+controls, including `skip` nested under `test.describe.skip`, are accepted
+without running browser test bodies. The resulting `skip` and `fixme` tests are
+`SKIPPED`; `fail` and `slow` tests are `ACTIVE`; and the control annotations are
+excluded from inventory metadata. Description-less `proofline.id` and unknown
+annotations remain fatal. A same-file source-location collision is exercised
+through a preceding reporter that gives two valid declarations the same source
+path; the line-aware merge key keeps them separate and `parseInventory` rejects
+the resulting provisional-ID collision.
 
 ## Exit-status deviation
 

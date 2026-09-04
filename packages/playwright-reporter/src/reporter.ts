@@ -8,6 +8,12 @@ import type { FullConfig, Reporter, Suite, TestCase } from '@playwright/test/rep
 import { resolveTestIdentity } from './identity.js';
 
 const REVISION_PATTERN = /^[a-f0-9]{40}$/;
+const PLAYWRIGHT_CONTROL_ANNOTATIONS = new Set([
+  'skip',
+  'fixme',
+  'fail',
+  'slow',
+]);
 
 interface ProoflineMetadata {
   repository: string;
@@ -63,24 +69,18 @@ function titlePathFor(test: TestCase): string[] {
   return titles;
 }
 
-function annotationsFor(test: TestCase): Annotation[] {
-  let descriptionlessSkipMarkers = 0;
+function sourceReference(config: FullConfig, test: TestCase): string {
+  const file = toPosixPath(relative(config.rootDir, test.location.file));
+  return `${file}:${String(test.location.line)}`;
+}
 
+function annotationsFor(config: FullConfig, test: TestCase): Annotation[] {
   return test.annotations.flatMap(({ description, type }) => {
-    if (type === 'skip' && description === undefined && test.expectedStatus === 'skipped') {
-      descriptionlessSkipMarkers += 1;
-      if (descriptionlessSkipMarkers === 1) return [];
-
-      const file = toPosixPath(test.location.file);
-      throw new Error(
-        `multiple description-less skip annotations on ${file}:${String(test.location.line)} (${test.title})`,
-      );
-    }
+    if (description === undefined && PLAYWRIGHT_CONTROL_ANNOTATIONS.has(type)) return [];
 
     if (typeof description !== 'string' || description.length === 0 || description.trim() !== description) {
-      const file = toPosixPath(test.location.file);
       throw new Error(
-        `annotation ${type} on ${file}:${String(test.location.line)} (${test.title}) must define a non-empty trimmed description`,
+        `annotation ${type} on ${sourceReference(config, test)} (${test.title}) must define a non-empty trimmed description`,
       );
     }
 
@@ -112,7 +112,7 @@ function mapTest(
 ): MappedTest {
   const file = toPosixPath(relative(config.rootDir, test.location.file));
   const titlePath = titlePathFor(test);
-  const annotations = annotationsFor(test);
+  const annotations = annotationsFor(config, test);
   const identity = resolveTestIdentity({ repository: metadata.repository, file, titlePath, annotations });
 
   return {

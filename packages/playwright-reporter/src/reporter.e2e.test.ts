@@ -259,53 +259,8 @@ describe('Playwright discovery reporter', () => {
     }
   });
 
-  it('rejects a description-less skip marker when the resolved status is not skipped', async () => {
-    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-non-skipped-marker-'));
-    const fixtureTests = join(fixtureDir, 'tests');
-    const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
-    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
-
-    try {
-      await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
-      await writeFile(
-        join(fixtureTests, 'non-skipped-marker.spec.ts'),
-        `import { test } from '@playwright/test';\n\n` +
-          `test('rejects a non-skipped marker', { annotation: { type: 'skip' } }, () => {});\n`,
-      );
-      await writeFile(
-        join(fixtureDir, 'non-skipped-marker-reporter.mjs'),
-        `export default class NonSkippedMarkerReporter {\n` +
-          `  onBegin(_config, suite) {\n` +
-          `    const target = suite.allTests().find((test) => test.title === 'rejects a non-skipped marker');\n` +
-          `    if (!target) throw new Error('missing non-skipped marker fixture');\n` +
-          `    target.expectedStatus = 'passed';\n` +
-          `  }\n` +
-          `}\n`,
-      );
-      await writeFile(
-        fixtureConfig,
-        `import { defineConfig } from '@playwright/test';\n\n` +
-          `export default defineConfig({\n` +
-          `  testDir: './tests',\n` +
-          `  metadata: { proofline: { repository: 'proofline/playwright-demo', revision: '0123456789abcdef0123456789abcdef01234567' } },\n` +
-          `  projects: [{ name: 'chromium' }, { name: 'firefox' }],\n` +
-          `  reporter: [['./non-skipped-marker-reporter.mjs'], ['@proofline/playwright-reporter']],\n` +
-          `});\n`,
-      );
-
-      const result = runDiscovery({ configFile: fixtureConfig, useConfigReporter: true });
-
-      expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain('annotation skip');
-      expect(result.stderr + result.stdout).toContain('rejects a non-skipped marker');
-      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
-    } finally {
-      await rm(fixtureDir, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects a user-added description-less skip marker on a statically skipped test', async () => {
-    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-duplicate-skip-marker-'));
+  it('normalizes Playwright control annotations without executing test bodies', async () => {
+    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-control-annotations-'));
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
     const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
@@ -314,16 +269,61 @@ describe('Playwright discovery reporter', () => {
       await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
       await cp(join(demoDir, 'playwright.config.ts'), fixtureConfig);
       await writeFile(
-        join(fixtureTests, 'duplicate-skip-marker.spec.ts'),
+        join(fixtureTests, 'control-annotations.spec.ts'),
         `import { test } from '@playwright/test';\n\n` +
-          `test.skip('rejects two description-less skip markers', { annotation: { type: 'skip' } }, () => {});\n`,
+          `test.describe('skip scope', () => {\n` +
+          `  test.skip();\n` +
+          `  test('ordinary skip', () => {\n` +
+          `    throw new Error('discovery executed a test body');\n` +
+          `  });\n` +
+          `});\n\n` +
+          `test.describe('fixme scope', () => {\n` +
+          `  test.fixme();\n` +
+          `  test('ordinary fixme', () => {\n` +
+          `    throw new Error('discovery executed a test body');\n` +
+          `  });\n` +
+          `});\n\n` +
+          `test.describe('fail scope', () => {\n` +
+          `  test.fail();\n` +
+          `  test('ordinary fail', () => {\n` +
+          `    throw new Error('discovery executed a test body');\n` +
+          `  });\n` +
+          `});\n\n` +
+          `test.describe('slow scope', () => {\n` +
+          `  test.slow();\n` +
+          `  test('ordinary slow', () => {\n` +
+          `    throw new Error('discovery executed a test body');\n` +
+          `  });\n` +
+          `});\n\n` +
+          `test.describe.skip('outer skipped scope', () => {\n` +
+          `  test.skip();\n` +
+          `  test('nested skip', () => {\n` +
+          `    throw new Error('discovery executed a test body');\n` +
+          `  });\n` +
+          `});\n`,
       );
 
       const result = runDiscovery({ configFile: fixtureConfig });
 
-      expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain('multiple description-less skip annotations');
-      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+      const inventory = await loadInventory(fixtureInventory);
+      expect(inventory.tests.map(({ title, status }) => ({ title, status }))).toEqual(
+        expect.arrayContaining([
+          { title: 'ordinary skip', status: 'SKIPPED' },
+          { title: 'ordinary fixme', status: 'SKIPPED' },
+          { title: 'ordinary fail', status: 'ACTIVE' },
+          { title: 'ordinary slow', status: 'ACTIVE' },
+          { title: 'nested skip', status: 'SKIPPED' },
+        ]),
+      );
+      expect(inventory.tests.flatMap((test) => test.annotations)).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'skip', description: expect.anything() as unknown }),
+          expect.objectContaining({ type: 'fixme', description: expect.anything() as unknown }),
+          expect.objectContaining({ type: 'fail', description: expect.anything() as unknown }),
+          expect.objectContaining({ type: 'slow', description: expect.anything() as unknown }),
+        ]),
+      );
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
