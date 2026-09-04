@@ -1,11 +1,11 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseInventory, type TestInventory } from '@proofline/evidence-model';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const demoDir = join(workspaceRoot, 'examples/playwright-demo');
@@ -46,17 +46,6 @@ function runDiscovery({ configFile, useConfigReporter = false }: DiscoveryComman
 async function loadInventory(file: string): Promise<TestInventory> {
   return parseInventory(JSON.parse(await readFile(file, 'utf8')));
 }
-
-beforeAll(() => {
-  execFileSync('pnpm', ['--filter', '@proofline/evidence-model', 'build'], {
-    cwd: workspaceRoot,
-    stdio: 'pipe',
-  });
-  execFileSync('pnpm', ['--filter', '@proofline/playwright-reporter', 'build'], {
-    cwd: workspaceRoot,
-    stdio: 'pipe',
-  });
-});
 
 describe('Playwright discovery reporter', () => {
   it('discovers one complete logical inventory without executing tests', async () => {
