@@ -23,6 +23,7 @@ interface ProoflineMetadata {
 interface MappedTest {
   definition: TestDefinition;
   logicalKey: string;
+  source: string;
 }
 
 export interface ProoflineReporterOptions {
@@ -70,7 +71,8 @@ function titlePathFor(test: TestCase): string[] {
 }
 
 function sourceReference(config: FullConfig, test: TestCase): string {
-  const file = toPosixPath(relative(config.rootDir, test.location.file));
+  const baseDirectory = config.configFile ? dirname(config.configFile) : config.rootDir;
+  const file = toPosixPath(relative(baseDirectory, test.location.file));
   return `${file}:${String(test.location.line)}`;
 }
 
@@ -92,13 +94,20 @@ function annotationValues(annotations: readonly Annotation[], type: string): str
   return sortedUnique(annotations.filter((annotation) => annotation.type === type).map(({ description }) => description));
 }
 
-function projectNameFor(test: TestCase, unnamedProjects: Set<object>): string {
+function projectNameFor(config: FullConfig, test: TestCase, unnamedProjects: Set<object>): string {
   const project = test.parent.project();
-  if (!project) throw new Error(`test has no Playwright project: ${test.title}`);
+  if (!project) throw new Error(`test on ${sourceReference(config, test)} has no Playwright project: ${test.title}`);
+
   if (project.name.length === 0) {
     unnamedProjects.add(project);
-    if (unnamedProjects.size > 1) throw new Error('multiple unnamed Playwright projects are ambiguous');
+    if (unnamedProjects.size > 1) {
+      throw new Error(`multiple unnamed Playwright projects are ambiguous on ${sourceReference(config, test)}`);
+    }
     return '<default>';
+  }
+
+  if (project.name === '<default>') {
+    throw new Error(`Playwright project name <default> is reserved on ${sourceReference(config, test)}`);
   }
 
   return project.name;
@@ -111,19 +120,29 @@ function mapTest(
   unnamedProjects: Set<object>,
 ): MappedTest {
   const file = toPosixPath(relative(config.rootDir, test.location.file));
+  const source = sourceReference(config, test);
   const titlePath = titlePathFor(test);
   const annotations = annotationsFor(config, test);
-  const identity = resolveTestIdentity({ repository: metadata.repository, file, titlePath, annotations });
+  let identity: ReturnType<typeof resolveTestIdentity>;
+
+  try {
+    identity = resolveTestIdentity({ repository: metadata.repository, file, titlePath, annotations });
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)} on ${source} (${test.title})`,
+    );
+  }
 
   return {
     logicalKey: JSON.stringify([file, test.location.line, titlePath]),
+    source,
     definition: {
       ...identity,
       title: test.title,
       titlePath,
       file,
       line: test.location.line,
-      projects: [projectNameFor(test, unnamedProjects)],
+      projects: [projectNameFor(config, test, unnamedProjects)],
       tags: sortedUnique(test.tags),
       annotations,
       capabilities: annotationValues(annotations, 'proofline.capability'),
@@ -184,7 +203,7 @@ export class ProoflineReporter implements Reporter {
           if (!existing) {
             testsByLogicalKey.set(mapped.logicalKey, mapped);
           } else if (existing.definition.id !== mapped.definition.id) {
-            this.#fatalErrors.add(`inconsistent identities for source test: ${mapped.definition.title}`);
+            this.#fatalErrors.add(`inconsistent identities for source test ${mapped.source}: ${mapped.definition.title}`);
           } else {
             existing.definition = {
               ...existing.definition,

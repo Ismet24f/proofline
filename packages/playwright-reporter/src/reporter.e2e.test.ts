@@ -140,6 +140,34 @@ describe('Playwright discovery reporter', () => {
     }
   });
 
+  it('rejects a literal <default> project name without writing an inventory', async () => {
+    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-reserved-default-project-'));
+    const fixtureTests = join(fixtureDir, 'tests');
+    const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
+
+    try {
+      await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
+      await writeFile(
+        fixtureConfig,
+        `import { defineConfig } from '@playwright/test';\n\n` +
+          `export default defineConfig({\n` +
+          `  testDir: './tests',\n` +
+          `  metadata: { proofline: { repository: 'proofline/playwright-demo', revision: '0123456789abcdef0123456789abcdef01234567' } },\n` +
+          `  projects: [{ name: '<default>' }],\n` +
+          `});\n`,
+      );
+
+      const result = runDiscovery({ configFile: fixtureConfig });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr + result.stdout).toContain('Playwright project name <default> is reserved');
+      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects multiple unnamed Playwright projects without writing an inventory', async () => {
     await rm(twoUnnamedProjectsInventory, { force: true });
 
@@ -253,6 +281,8 @@ describe('Playwright discovery reporter', () => {
       expect(result.status).not.toBe(0);
       expect(result.stderr + result.stdout).toContain(`annotation ${annotationType}`);
       expect(result.stderr + result.stdout).toContain('rejects a description-less annotation');
+      expect(result.stderr + result.stdout).toContain('tests/missing-description.spec.ts:');
+      expect(result.stderr + result.stdout).not.toContain(fixtureDir);
       await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
