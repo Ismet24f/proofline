@@ -1,6 +1,6 @@
 # Proofline Narrow-Wedge and PR Remediation Design
 
-**Status:** Draft for user review  
+**Status:** APPROVED
 **Date:** 2026-09-04  
 **Applies to:** PR #1, `feature/phase-0-cli-alpha`  
 **Product stage:** Technical foundation and problem validation  
@@ -227,7 +227,7 @@ The selection favors permissive organizational adoption and includes explicit pa
 
 - Remove the tracked `.superpowers/.../task-3-report.md` internal process artifact.
 - Keep `.superpowers/` ignored.
-- Replace `/Users/ankora/...` commands in public documentation with portable Node 24 instructions.
+- Replace machine-specific runtime paths in public documentation with portable Node 24 instructions.
 - Ensure no credentials, customer data, private repository names, or workstation paths are committed.
 
 ### 9.3 README minimum
