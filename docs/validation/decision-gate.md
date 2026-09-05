@@ -34,6 +34,18 @@ answers otherwise match. Record excluded interviews and the exclusion reason;
 do not backdate the window from an unqualified, incomplete, or internal
 conversation.
 
+For the qualitative NARROW signal, evaluate only the frozen first 12 qualified
+interviews in chronological completion order. Each may have exactly one
+case-sensitive `narrow_job` token in `notes`:
+`narrow_job=reporting`, `narrow_job=skip_flake_visibility`,
+`narrow_job=audit_packets`, or `narrow_job=none`. A non-`none` token counts
+only when the same scorecard has a non-empty `quoted_problem` and an
+alias-safe, case-sensitive `narrow_job_evidence_ref=E-<alias>` token in
+`notes`. `<alias>` is a non-empty opaque identifier; it must not contain a
+customer, participant, repository, PR, or workstation identifier. A missing,
+duplicated, or unrecognized `narrow_job` token is not inferred and never
+counts toward the NARROW signal; record it as an exclusion.
+
 ## Measures
 
 ```text
@@ -45,6 +57,7 @@ written_design_partner_count = count(written commitments with evidence reference
 priced_commitment_count = count(commitments where a buyer discussed a concrete price and next step)
 cost_comparison_count = count(complete team-release cost comparisons)
 cost_overrun_count = count(complete cost comparisons where metadata_maintenance_hours > expected_release_effort_saved_hours)
+narrow_job_count(job) = count(frozen first 12 qualified interviews with the same non-none narrow_job token, non-empty quoted_problem, and narrow_job_evidence_ref)
 ```
 
 For every measure, retain both the numerator and denominator, included record
@@ -113,20 +126,24 @@ interview IDs and completion dates in the gate record.
 
 NARROW at day 42 only when its core sample is complete, PROCEED and STOP are
 both false, and at least one signal below is true. A complete NARROW core
-sample has at least 12 qualified interviews, 3 complete workflow diaries from distinct
-teams, all qualified-interview follow-ups complete, exactly 20 eligible PRs
-assessed as 10 per authorized repository alias, and 3 complete team-release
-cost comparisons, plus 2 successful unaided external installs. No NARROW signal can replace a missing core sample; that
-case reaches the final insufficient-evidence STOP.
+sample has at least 12 qualified interviews, 3 complete workflow diaries from
+distinct teams, all qualified-interview follow-ups complete, exactly 20
+eligible PRs assessed as 10 per authorized repository alias, 3 complete
+team-release cost comparisons, and 2 successful unaided external installs. No
+NARROW signal can replace a missing core sample; that case reaches the final
+insufficient-evidence STOP.
 
 - `top_three_count is 4 or 5`;
 - `median_manual_hours is >= 1 and < 2`;
 - `successful_install_count = 2`;
 - `probe_hit_count = 2 of 20`;
-- repeated evidence supports only reporting, skip/flake visibility, or audit packets rather than enforcement.
+- `narrow_job_count(reporting) >= 4`,
+  `narrow_job_count(skip_flake_visibility) >= 4`, or
+  `narrow_job_count(audit_packets) >= 4`.
 
 The NARROW rationale must identify the supported smaller workflow, its exact
-evidence, and the capabilities to remove or defer.
+token value, the frozen interview IDs, their quoted problems, their alias-safe
+evidence references, and the capabilities to remove or defer.
 
 ## Evaluation order and completeness
 
@@ -172,6 +189,7 @@ references must not expose customer or personal data in this repository.
 | Qualified interviews completed | / 12 | | |
 | `top_three_count` | / qualified interviews | | |
 | `median_manual_hours` | ordered per-interview `(hours_planning + hours_reporting)` values and calculated median | | |
+| `narrow_job_count` by non-`none` value | `reporting`: / 12; `skip_flake_visibility`: / 12; `audit_packets`: / 12 | Frozen interview IDs, quoted problems, and alias-safe evidence references | Missing, duplicate, unrecognized, `none`, or unsupported-token reasons |
 | Complete workflow diaries from distinct teams | / 3 teams | | |
 | Qualified-interview follow-ups complete | / qualified interviews | | |
 

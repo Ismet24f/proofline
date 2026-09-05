@@ -28,6 +28,22 @@ If a qualifying predicate is not evidenced, or either exact notes token is
 absent, mark the interview excluded and record why; do not count it toward the
 gate or start the 42-day clock.
 
+## NARROW job classification
+
+For each of the frozen first 12 qualified interviews, record exactly one of
+these case-sensitive `notes` tokens: `narrow_job=reporting`,
+`narrow_job=skip_flake_visibility`, `narrow_job=audit_packets`, or
+`narrow_job=none`. A non-`none` classification is usable only when
+`quoted_problem` is non-empty and `notes` also contains the alias-safe token
+`narrow_job_evidence_ref=E-<alias>`. `<alias>` must be a non-empty opaque
+identifier with no customer, participant, repository, PR, or workstation
+identifier. Example token order for a counted non-`none` interview:
+`external=yes; completed=yes; narrow_job=reporting; narrow_job_evidence_ref=E-example`.
+
+Do not infer a classification. A missing, duplicated, or unrecognized
+`narrow_job` token is excluded from the NARROW metric. `narrow_job=none`
+records an explicit non-match and is not a NARROW signal.
+
 ## Problem and workflow questions
 
 1. Walk me through the last production release from code complete to approval.
@@ -45,6 +61,10 @@ gate or start the 42-day clock.
 9. Tell me about the last escaped defect related to missing or misleading evidence.
 10. Rank release planning/evidence among your top five QA pains. Record whether
     it is in the top three.
+11. If the demonstrated problem supports only reporting, skip/flake visibility,
+    or audit packets, record that exact narrow-job token, a non-identifying
+    quoted problem, and an alias-safe evidence reference; otherwise record
+    `narrow_job=none`.
 
 ## Evidence requests after the problem is established
 

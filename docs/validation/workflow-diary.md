@@ -76,6 +76,16 @@ require a recommendation engine.
 | Expected release effort saved hours | |
 | Evidence reference for both values | |
 
+## NARROW-job cross-reference
+
+When this diary supports a NARROW classification, record the linked interview's
+exact `narrow_job` token and its alias-safe `narrow_job_evidence_ref`. The
+supporting interview scorecard must also contain a non-empty `quoted_problem`.
+
+| Field | Value |
+| --- | --- |
+| NARROW-job token and alias-safe evidence reference | |
+
 ## Evidence notes
 
 Link or reference the artifact for each material claim. If an artifact cannot
