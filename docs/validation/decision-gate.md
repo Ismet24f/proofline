@@ -118,9 +118,11 @@ known from its complete frozen sample:
   chronological completion; STOP if `top_three_count < 4 OR
   median_manual_hours < 1` for that frozen cohort.
 
-All other STOP rules are evaluated only at day 42. The frozen 12-interview
-cohort is used only for the before-day-42 terminal test; retain its ordered
-interview IDs and completion dates in the gate record.
+All other STOP rules are evaluated only at day 42. The frozen first-12 cohort
+drives both the before-day-42 interview STOP and the day-42 `narrow_job`
+metric; retain its ordered interview IDs and completion dates in the gate
+record. At day 42, `top_three_count` and `median_manual_hours` use all
+qualified interviews completed in the window, as defined in Measures.
 
 ### NARROW
 
