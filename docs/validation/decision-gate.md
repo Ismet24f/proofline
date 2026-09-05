@@ -20,8 +20,19 @@ green_but_unverified = merged PR had green required CI AND at least one manually
 
 `first_qualified_interview_date` is the date of the first *completed,
 qualified external* interview. A record is not qualified until every predicate
-above is evidenced. Record excluded interviews and the exclusion reason; do
-not backdate the window from an unqualified or internal conversation.
+above is evidenced. For every counted interview, the `notes` field must
+contain these exact, case-sensitive tokens in this canonical form:
+`external=yes; completed=yes`.
+
+- `external=yes` means the participant represents a team outside the Proofline
+  operating team.
+- `completed=yes` means the interview was conducted and the qualification plus
+  problem-interview evidence was recorded.
+
+Records lacking either exact token are excluded, even if their role and tool
+answers otherwise match. Record excluded interviews and the exclusion reason;
+do not backdate the window from an unqualified, incomplete, or internal
+conversation.
 
 ## Measures
 
@@ -43,6 +54,11 @@ the participant is external, completed inventory generation unaided, and took
 merged historical PRs; exactly 10 must be assessed for each of two repository
 aliases before the 20-PR probe condition is complete.
 
+A priced commitment is countable only when `participant_role` identifies the
+person who discussed the price and next step as an authorized buyer or
+commercial authority. A participant's prediction of what a buyer might pay,
+or a price discussion without that authority, never counts.
+
 ## Authoritative outcomes
 
 ### PROCEED
@@ -60,13 +76,25 @@ PROCEED only when all are true by day 42:
 
 ### STOP
 
-STOP immediately when a terminal rule is known, or at day 42 when any is true:
+At day 42, STOP when any is true:
 
 - `successful_install_count < 2 AND written_design_partner_count = 0`;
 - `probe_hit_count <= 1 after all 20 eligible PRs are assessed`;
 - `12 interviews are complete AND (top_three_count < 4 OR median_manual_hours < 1)`;
 - `written_design_partner_count = 0 AND priced_commitment_count = 0 after all qualified-interview follow-ups are complete`;
 - the observed metadata/maintenance cost is greater than the release effort participants expect to save.
+
+Before day 42, STOP only when one of these terminal conditions is conclusively
+known from its complete frozen sample:
+
+- after all 20 eligible probe PRs are assessed, `probe_hit_count <= 1`;
+- after the first 12 qualified completed interviews, freeze that cohort by
+  chronological completion; STOP if `top_three_count < 4 OR
+  median_manual_hours < 1` for that frozen cohort.
+
+All other STOP rules are evaluated only at day 42. The frozen 12-interview
+cohort is used only for the before-day-42 terminal test; retain its ordered
+interview IDs and completion dates in the gate record.
 
 ### NARROW
 
@@ -84,6 +112,11 @@ evidence, and the capabilities to remove or defer.
 
 ## Evaluation order and completeness
 
+Before day 42, evaluate only the two terminal STOP conditions above after
+their complete frozen samples exist. If neither is true, continue collecting
+evidence; no other STOP, NARROW, or PROCEED outcome is available before day
+42.
+
 At day 42, evaluate in this exact order:
 
 1. `PROCEED` if every PROCEED condition is true.
@@ -91,10 +124,10 @@ At day 42, evaluate in this exact order:
 3. Otherwise `NARROW` if a NARROW signal is true.
 4. Otherwise `STOP` for insufficient evidence.
 
-Incomplete sampling at day 42 can never be called `PROCEED`. A terminal STOP
-rule known before day 42 ends collection and records STOP immediately. The
-day-42 precedence above applies to the complete decision record, including
-any evidence collected before an immediate STOP.
+Incomplete sampling at day 42 can never be called `PROCEED`. This precedence
+is total: every day-42 evaluation ends in exactly one of PROCEED, STOP, or
+NARROW, with the final STOP covering insufficient evidence. A before-day-42
+terminal STOP ends collection and records STOP immediately.
 
 ## Auditable gate record
 
@@ -116,13 +149,18 @@ references must not expose customer or personal data in this repository.
 
 ### Interview and diary evidence
 
-| Field | Numerator / denominator | Included record IDs | Exclusions and reasons |
+| Field | Numerator / denominator or calculation | Included record IDs | Exclusions and reasons |
 | --- | --- | --- | --- |
 | Qualified interviews completed | / 12 | | |
 | `top_three_count` | / qualified interviews | | |
-| `median_manual_hours` | total planning + reporting hours / qualified interviews | | |
+| `median_manual_hours` | ordered per-interview `(hours_planning + hours_reporting)` values and calculated median | | |
 | Complete workflow diaries from distinct teams | / 3 teams | | |
 | Qualified-interview follow-ups complete | / qualified interviews | | |
+
+For `median_manual_hours`, record the ordered per-interview values as
+`interview_id: (hours_planning + hours_reporting) = value`, alongside the
+calculated median. Do not substitute a total or a division calculation for
+this ordered-value audit trail.
 
 ### Installation evidence
 

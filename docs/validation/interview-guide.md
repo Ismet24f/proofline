@@ -15,9 +15,18 @@ the following:
 3. Does the participant's team use GitHub Actions?
 4. Is this a completed external interview?
 
-Record the role and tool-use answers in the scorecard. If any qualifying
-predicate is not evidenced, mark the interview excluded and record why; do not
-count it toward the gate.
+Record the role and tool-use answers in the scorecard. For every counted
+interview, the `notes` field must contain the exact, case-sensitive tokens in
+this canonical form: `external=yes; completed=yes`.
+
+- `external=yes` means the participant represents a team outside the Proofline
+  operating team.
+- `completed=yes` means the interview was conducted and the qualification plus
+  problem-interview evidence was recorded.
+
+If a qualifying predicate is not evidenced, or either exact notes token is
+absent, mark the interview excluded and record why; do not count it toward the
+gate or start the 42-day clock.
 
 ## Problem and workflow questions
 
@@ -50,9 +59,11 @@ After the participant has demonstrated the problem with a real example:
    the installation scorecard. It is successful only when completed in 60
    minutes or less.
 3. Only after the problem is demonstrated, test a concrete paid-pilot
-   conversation. Ask whether a buyer would discuss a concrete price and next
-   step; record an actual written commitment or concrete price plus next step,
-   with an evidence reference. Do not treat general interest as a commitment.
+   conversation with an authorized buyer or commercial authority. Record that
+   authority in `participant_role`, and count a priced commitment only when
+   that person actually discussed a concrete price and next step, with an
+   evidence reference. A participant's prediction, general interest, or a
+   price discussion without buyer/commercial authority is not a commitment.
 
 Do not pitch before qualification and the problem questions are complete. Do
 not imply availability, pricing, customer traction, or a commitment that has
