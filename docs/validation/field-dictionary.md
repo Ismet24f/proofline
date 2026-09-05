@@ -28,6 +28,32 @@ notes field, quoted problem, or evidence reference.
 - Rows with a missing/invalid required field are retained as exclusions with a
   reason; their values are never inferred and they never count.
 
+## Gate window freeze
+
+The validation owner is the alias-designated person responsible for accepting
+records into the gate. When the first qualification-complete interview is
+accepted, that owner immediately writes an append-only gate record containing:
+
+- the source `interview_id` and its `completed_at`;
+- `window_start`, copied from that accepted interview's `completed_at`;
+- `window_end`, calculated once as 42 calendar days after `window_start`;
+- `window_frozen_at`, an ISO 8601 timestamp for the recording event;
+- the validation-owner recorder alias; and
+- an alias-safe window-freeze evidence reference.
+
+The owner records the freeze before accepting another interview. After
+`window_frozen_at`, `window_start` and `window_end` are immutable and must not
+be recalculated with `min(completed_at)` or any other query over later rows.
+
+A subsequently recorded interview whose `completed_at < window_start` has the
+exact exclusion reason `late_backdated_before_window`. Retain it for audit, but
+exclude it from `qualified_interview_count`, formal-cohort selection, and every
+verdict measure. A later record completed inside the frozen boundaries may be
+accepted normally until the formal interview cohort freezes. Once the cohort
+or verdict freezes, no later record may replace a member or change the verdict.
+If the source interview is invalidated, create a dated, versioned gate restart;
+do not mutate the existing window.
+
 ## Interview scorecard
 
 `interview-scorecard.csv` uses `interview_id` as its primary ID.
@@ -75,15 +101,17 @@ notes field, quoted problem, or evidence reference.
   only with a non-empty `quoted_problem` and exactly one alias-safe
   `narrow_job_evidence_ref=E-<alias>` token.
 
-The formal interview cohort is the first 12 qualified interviews ordered by
-`completed_at` ascending and then `interview_id` ascending. It freezes when
-the twelfth record exists. Later records, backdated inserts, corrections that
-would change membership, and interview 13 onward are excluded from every
-formal interview-derived measure. Correct a frozen record by an auditable
-amendment; do not replace the cohort. `qualified_interview_count >= 12` is the
-sample-completeness predicate. Narrow top-three count, median manual hours,
-early STOP, all-follow-ups-complete, and every `narrow_job_count` use only the
-same frozen 12.
+The formal interview cohort is the first 12 accepted, in-window qualified
+interviews ordered by `completed_at` ascending and then `interview_id`
+ascending. It freezes when the twelfth record exists. After that freeze, later
+records, backdated inserts, corrections that would change membership, and
+interview 13 onward are excluded from every formal interview-derived measure.
+The gate-window rule above separately excludes every
+`late_backdated_before_window` row even before cohort freeze. Correct a frozen
+record by an auditable amendment; do not replace the cohort.
+`qualified_interview_count >= 12` is the sample-completeness predicate. Narrow
+top-three count, median manual hours, early STOP, all-follow-ups-complete, and
+every `narrow_job_count` use only the same frozen 12.
 
 ## Installation scorecard
 

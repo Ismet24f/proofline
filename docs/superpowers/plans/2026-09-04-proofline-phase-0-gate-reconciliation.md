@@ -14,6 +14,8 @@
 
 - Execute after the technical PR remediation is locally green.
 - Freeze the thresholds below before the first counted interview. Later changes require a dated decision note and restart of affected counts.
+- When the validation owner accepts the first qualified interview, freeze its `completed_at` as `window_start`, derive `window_end` once, and record the source ID, freeze timestamp, recorder alias, and evidence reference before accepting another interview.
+- Never recompute the window from later rows. Retain a later row with `completed_at < window_start` as an excluded `late_backdated_before_window` record; it cannot affect the formal cohort or verdict.
 - Freeze the formal interview cohort at the first 12 qualified records ordered by `completed_at`, then `interview_id`; all interview-derived measures use only that cohort.
 - Use `docs/validation/field-dictionary.md` as the normative type, alias, uniqueness, de-duplication, linkage, and countability contract.
 - Do not count compliments, GitHub stars, inferred intent, internal installations, or unpriced enthusiasm.
@@ -41,10 +43,11 @@ elsewhere in this historical plan. Implement it exactly in the authoritative
 gate:
 
 ```text
-window_start = earliest completed_at among qualified interviews
-window_end = window_start + 42 calendar days
+window_start = completed_at of the first qualified interview accepted into the gate; immutable after acceptance
+window_frozen_at = timestamp when the validation owner records the source interview, window_start, window_end, recorder alias, and evidence reference
+window_end = frozen window_start + 42 calendar days; immutable after window_frozen_at
 qualified_interview = external=yes AND role is allowed AND uses_playwright=yes AND uses_github_actions=yes AND completed_at is valid
-qualified_interview_count = count(qualified interviews completed in the window)
+qualified_interview_count = count(qualified interviews accepted inside the frozen window, excluding late_backdated_before_window records)
 formal_interview_cohort = first 12 qualified interviews ordered by completed_at, then interview_id
 narrow_top_three(interview) = affected_test_selection_rank in 1..3 OR green_but_unverified_rank in 1..3
 narrow_top_three_count = count(formal cohort where narrow_top_three is true)
@@ -102,7 +105,12 @@ Evaluate at day 42 in this order: `PROCEED` if every proceed condition is true; 
 
 ### Step 3: Make the gate record auditable
 
-Add fields for first interview date, day-42 deadline, each numerator/denominator, included record IDs, exclusions with reasons, repository aliases, install durations, probe result, commitment evidence, decision owner, and decision date.
+Add fields for the window source interview ID and `completed_at`, immutable
+`window_start` and `window_end`, `window_frozen_at`, validation-owner recorder
+alias, freeze evidence reference, each numerator/denominator, included record
+IDs, exclusions with reasons, repository aliases, install durations, probe
+result, commitment evidence, decision owner, and decision date. Record
+`late_backdated_before_window` exclusions without recomputing either boundary.
 
 ### Step 4: Expand collection templates
 
@@ -222,7 +230,9 @@ and remove them after the check:
 - missing frozen-cohort follow-up exclusion;
 - duplicate-team installation and commitment de-duplication;
 - withdrawn/expired commitment exclusion and buyer-authority rejection;
-- interview 12 to 13 monotonicity and same-`completed_at` `interview_id` tie-break.
+- interview 12 to 13 monotonicity and same-`completed_at` `interview_id` tie-break;
+- a later backdated interview before frozen `window_start`, proving that both
+  window boundaries, the formal cohort, and the verdict remain unchanged.
 
 Calculate using only `decision-gate.md` and the field dictionary. Expected
 normal outcomes are `PROCEED`, `STOP`, and `NARROW`; every invalid or duplicate
@@ -266,8 +276,10 @@ At the end of the window, calculate one verdict with cited record IDs:
 
 This plan is complete when the repository contains one dry-run-tested
 authoritative gate and field dictionary; the supporting blank templates expose
-the current exact headers; all interview measures use the frozen first 12; the
-two-pass probe rejects unauthorized, hindsight-selected, and same-role rows;
+the current exact headers; the first accepted qualified interview permanently
+freezes an auditable window that later backdated rows cannot move; all
+interview measures use the frozen first 12; the two-pass probe rejects
+unauthorized, hindsight-selected, and same-role rows;
 installs and commitments de-duplicate by team; the PROCEED cost comparisons and
 complete NARROW core sample are explicit; the three earlier deliverables point
 to the same gate; no obsolete governing formula remains; and review finds no

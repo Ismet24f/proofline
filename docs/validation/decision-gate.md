@@ -10,8 +10,9 @@ gate; interest and incomplete or inferred evidence do not count.
 ## Window, qualification, and frozen samples
 
 ```text
-window_start = earliest completed_at among qualified interviews
-window_end = window_start + 42 calendar days
+window_start = completed_at of the first qualified interview accepted into the gate; immutable after acceptance
+window_frozen_at = timestamp when the validation owner records the source interview, window_start, and window_end
+window_end = frozen window_start + 42 calendar days; immutable after window_frozen_at
 qualified_interview = external=yes AND participant_role is allowed AND uses_playwright=yes AND uses_github_actions=yes AND completed_at is valid
 formal_interview_cohort = first 12 qualified interviews ordered by completed_at, then interview_id
 successful_external_install = first qualifying success for a distinct team_alias, completed unaided in <= 60 minutes
@@ -19,9 +20,24 @@ countable_probe_row = authorized and eligible historical merged PR assessed unde
 green_but_unverified = required CI was green AND at least one independently expected Playwright test was skipped, incomplete, retried, or absent
 ```
 
+The designated validation owner accepts the first qualification-complete
+interview into the gate and immediately records its `interview_id`,
+`completed_at`, the derived `window_start` and `window_end`,
+`window_frozen_at`, their own recorder alias, and an alias-safe freeze evidence
+reference in the gate record. This freeze must be recorded before another
+interview is accepted. It is an event, not a query over the current scorecard.
+
 Normalize timestamps to UTC for comparison. `window_end` is the same UTC clock
-time 42 calendar dates after `window_start`. Only records completed on or after
-`window_start` and on or before `window_end` can affect the day-42 result.
+time 42 calendar dates after the frozen `window_start`. Neither boundary is
+ever recomputed from later records. An interview added after
+`window_frozen_at` with `completed_at < window_start` is retained as an
+excluded `late_backdated_before_window` record; it cannot enter
+`qualified_interview_count`, the formal cohort, or any verdict calculation. A
+later accepted interview whose `completed_at` is inside the frozen window may
+count normally until the formal cohort freezes. After that cohort or a verdict
+is frozen, later records cannot replace its members or change the verdict. If
+the source interview is later found invalid, record the error and explicitly
+restart/version the gate; never silently move either boundary.
 
 `qualified_interview_count >= 12` is the interview sample-completeness rule.
 When the twelfth qualified interview exists, freeze the ordered first 12 by
@@ -40,7 +56,7 @@ affect `probe_hit_count`.
 ## Measures
 
 ```text
-qualified_interview_count = count(all qualified interviews completed in the window)
+qualified_interview_count = count(qualified interviews accepted inside the frozen window, excluding late_backdated_before_window records)
 narrow_top_three(interview) = affected_test_selection_rank in 1..3 OR green_but_unverified_rank in 1..3
 narrow_top_three_count = count(formal cohort where narrow_top_three(interview) is true)
 median_manual_hours = median(hours_planning + hours_reporting for the formal cohort)
@@ -178,8 +194,12 @@ aliases only; raw evidence stays private.
 
 | Field                                                                 | Value |
 | --------------------------------------------------------------------- | ----- |
-| Window start (`window_start`)                                         |       |
-| Day-42 deadline (`window_end`)                                        |       |
+| Window source interview ID and `completed_at`                         |       |
+| Frozen window start (`window_start`)                                  |       |
+| Immutable day-42 deadline (`window_end`)                              |       |
+| Window freeze timestamp (`window_frozen_at`)                          |       |
+| Window freeze recorder alias                                          |       |
+| Window freeze evidence reference                                      |       |
 | Formal interview cohort freeze timestamp                              |       |
 | Frozen ordered interview IDs (`completed_at`, then `interview_id`)    |       |
 | Authorized repository cohort freeze timestamp and two aliases         |       |
