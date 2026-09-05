@@ -1,10 +1,10 @@
 # Proofline Narrow-Wedge and PR Remediation Design
 
-**Status:** APPROVED
-**Date:** 2026-09-04
-**Applies to:** PR #1, `feature/phase-0-cli-alpha`
-**Product stage:** Technical foundation and problem validation
-**License decision:** Apache License 2.0
+- **Status:** APPROVED
+- **Date:** 2026-09-04
+- **Applies to:** PR #1, `feature/phase-0-cli-alpha`
+- **Product stage:** Technical foundation and problem validation
+- **License decision:** Apache License 2.0
 
 ## 1. Decision
 
@@ -229,6 +229,14 @@ The selection favors permissive organizational adoption and includes explicit pa
 - Keep `.superpowers/` ignored.
 - Replace machine-specific runtime paths in public documentation with portable Node 24 instructions.
 - Ensure no credentials, customer data, private repository names, or workstation paths are committed.
+
+Verify the public source set with:
+
+```sh
+rg -n '[/]Users/|[/]home/|[A-Za-z]:\\Users\\' README.md docs package.json packages examples .github
+```
+
+The Windows expression matches native paths while its documented character class prevents this command from matching its own pattern.
 
 ### 9.3 README minimum
 

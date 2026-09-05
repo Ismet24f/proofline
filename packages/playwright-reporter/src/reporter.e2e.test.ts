@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,21 +18,36 @@ import { describe, expect, it } from 'vitest';
 const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const demoDir = join(workspaceRoot, 'examples/playwright-demo');
 const inventoryFile = join(demoDir, '.proofline/inventory.json');
-const testDirectoryInventoryFile = join(demoDir, 'tests/.proofline/inventory.json');
+const testDirectoryInventoryFile = join(
+  demoDir,
+  'tests/.proofline/inventory.json',
+);
 const twoUnnamedProjectsFixtureDir = join(
   workspaceRoot,
   'packages/playwright-reporter/e2e-fixtures/two-unnamed-projects',
 );
-const twoUnnamedProjectsConfig = join(twoUnnamedProjectsFixtureDir, 'playwright.config.ts');
-const twoUnnamedProjectsInventory = join(twoUnnamedProjectsFixtureDir, '.proofline/inventory.json');
-const executionMarker = join(tmpdir(), `proofline-executed-${String(process.pid)}`);
+const twoUnnamedProjectsConfig = join(
+  twoUnnamedProjectsFixtureDir,
+  'playwright.config.ts',
+);
+const twoUnnamedProjectsInventory = join(
+  twoUnnamedProjectsFixtureDir,
+  '.proofline/inventory.json',
+);
+const executionMarker = join(
+  tmpdir(),
+  `proofline-executed-${String(process.pid)}`,
+);
 
 interface DiscoveryCommandOptions {
   configFile?: string;
   useConfigReporter?: boolean;
 }
 
-function runDiscovery({ configFile, useConfigReporter = false }: DiscoveryCommandOptions = {}) {
+function runDiscovery({
+  configFile,
+  useConfigReporter = false,
+}: DiscoveryCommandOptions = {}) {
   const args = [
     '--dir',
     'examples/playwright-demo',
@@ -33,7 +56,8 @@ function runDiscovery({ configFile, useConfigReporter = false }: DiscoveryComman
     'test',
     '--list',
   ];
-  if (!useConfigReporter) args.push('--reporter=@proofline/playwright-reporter');
+  if (!useConfigReporter)
+    args.push('--reporter=@proofline/playwright-reporter');
   if (configFile) args.push('--config', configFile);
 
   return spawnSync('pnpm', args, {
@@ -56,10 +80,14 @@ describe('Playwright discovery reporter', () => {
     const result = runDiscovery();
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
-    await expect(readFile(executionMarker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(executionMarker, 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
 
     const inventory = await loadInventory(inventoryFile);
-    await expect(readFile(testDirectoryInventoryFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(testDirectoryInventoryFile, 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
     expect(inventory).toMatchObject({
       schemaVersion: 1,
       repository: 'proofline/playwright-demo',
@@ -67,7 +95,11 @@ describe('Playwright discovery reporter', () => {
     });
     expect(inventory.tests).toHaveLength(6);
     expect(new Set(inventory.tests.map((item) => item.id)).size).toBe(6);
-    expect(inventory.tests.every((item) => item.projects.join(',') === 'chromium,firefox')).toBe(true);
+    expect(
+      inventory.tests.every(
+        (item) => item.projects.join(',') === 'chromium,firefox',
+      ),
+    ).toBe(true);
 
     const explicit = inventory.tests.find((item) => item.id === 'PL-T-00001');
     expect(explicit).toMatchObject({
@@ -87,13 +119,23 @@ describe('Playwright discovery reporter', () => {
       ]),
     );
 
-    expect(inventory.tests.find((item) => item.title === 'discovers a statically skipped test')).toMatchObject({
+    expect(
+      inventory.tests.find(
+        (item) => item.title === 'discovers a statically skipped test',
+      ),
+    ).toMatchObject({
       annotations: [],
       status: 'SKIPPED',
     });
-    expect(inventory.tests.filter((item) => item.title.startsWith('discovers parameterized row'))).toHaveLength(2);
+    expect(
+      inventory.tests.filter((item) =>
+        item.title.startsWith('discovers parameterized row'),
+      ),
+    ).toHaveLength(2);
 
-    const duplicateTitles = inventory.tests.filter((item) => item.title === 'duplicate human-readable title');
+    const duplicateTitles = inventory.tests.filter(
+      (item) => item.title === 'duplicate human-readable title',
+    );
     expect(duplicateTitles).toHaveLength(2);
     expect(duplicateTitles[0]?.id).not.toBe(duplicateTitles[1]?.id);
   });
@@ -120,8 +162,14 @@ describe('Playwright discovery reporter', () => {
       expect(result.status, result.stderr || result.stdout).toBe(0);
       const inventory = await loadInventory(fixtureInventory);
       expect(inventory.tests).toHaveLength(6);
-      expect(inventory.tests.every((item) => item.projects.join(',') === '<default>')).toBe(true);
-      await expect(readFile(join(fixtureTests, '.proofline/inventory.json'), 'utf8')).rejects.toMatchObject({
+      expect(
+        inventory.tests.every(
+          (item) => item.projects.join(',') === '<default>',
+        ),
+      ).toBe(true);
+      await expect(
+        readFile(join(fixtureTests, '.proofline/inventory.json'), 'utf8'),
+      ).rejects.toMatchObject({
         code: 'ENOENT',
       });
     } finally {
@@ -130,7 +178,9 @@ describe('Playwright discovery reporter', () => {
   });
 
   it('rejects a literal <default> project name without writing an inventory', async () => {
-    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-reserved-default-project-'));
+    const fixtureDir = await mkdtemp(
+      join(demoDir, '.tmp-reserved-default-project-'),
+    );
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
     const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
@@ -150,8 +200,12 @@ describe('Playwright discovery reporter', () => {
       const result = runDiscovery({ configFile: fixtureConfig });
 
       expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain('Playwright project name <default> is reserved');
-      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(result.stderr + result.stdout).toContain(
+        'Playwright project name <default> is reserved',
+      );
+      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
@@ -163,8 +217,12 @@ describe('Playwright discovery reporter', () => {
     const result = runDiscovery({ configFile: twoUnnamedProjectsConfig });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('multiple unnamed Playwright projects are ambiguous');
-    await expect(readFile(twoUnnamedProjectsInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(result.stderr + result.stdout).toContain(
+      'multiple unnamed Playwright projects are ambiguous',
+    );
+    await expect(
+      readFile(twoUnnamedProjectsInventory, 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('resolves a relative output override from the configuration directory', async () => {
@@ -185,11 +243,18 @@ describe('Playwright discovery reporter', () => {
           `});\n`,
       );
 
-      const result = runDiscovery({ configFile: fixtureConfig, useConfigReporter: true });
+      const result = runDiscovery({
+        configFile: fixtureConfig,
+        useConfigReporter: true,
+      });
 
       expect(result.status, result.stderr || result.stdout).toBe(0);
-      await expect(loadInventory(fixtureInventory)).resolves.toMatchObject({ schemaVersion: 1 });
-      await expect(readFile(join(fixtureTests, 'custom-output/inventory.json'), 'utf8')).rejects.toMatchObject({
+      await expect(loadInventory(fixtureInventory)).resolves.toMatchObject({
+        schemaVersion: 1,
+      });
+      await expect(
+        readFile(join(fixtureTests, 'custom-output/inventory.json'), 'utf8'),
+      ).rejects.toMatchObject({
         code: 'ENOENT',
       });
     } finally {
@@ -215,8 +280,12 @@ describe('Playwright discovery reporter', () => {
       const result = runDiscovery({ configFile: fixtureConfig });
 
       expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain('duplicate stable test IDs');
-      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(result.stderr + result.stdout).toContain(
+        'duplicate stable test IDs',
+      );
+      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
@@ -240,8 +309,12 @@ describe('Playwright discovery reporter', () => {
       const result = runDiscovery({ configFile: fixtureConfig });
 
       expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain('invalid proofline.id: PL-T-1');
-      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(result.stderr + result.stdout).toContain(
+        'invalid proofline.id: PL-T-1',
+      );
+      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
@@ -251,7 +324,9 @@ describe('Playwright discovery reporter', () => {
     { annotationType: 'proofline.id', label: 'a Proofline annotation' },
     { annotationType: 'owner', label: 'a non-Proofline annotation' },
   ])('rejects $label without a description', async ({ annotationType }) => {
-    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-missing-description-'));
+    const fixtureDir = await mkdtemp(
+      join(demoDir, '.tmp-missing-description-'),
+    );
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
     const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
@@ -268,18 +343,28 @@ describe('Playwright discovery reporter', () => {
       const result = runDiscovery({ configFile: fixtureConfig });
 
       expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain(`annotation ${annotationType}`);
-      expect(result.stderr + result.stdout).toContain('rejects a description-less annotation');
-      expect(result.stderr + result.stdout).toContain('tests/missing-description.spec.ts:');
+      expect(result.stderr + result.stdout).toContain(
+        `annotation ${annotationType}`,
+      );
+      expect(result.stderr + result.stdout).toContain(
+        'rejects a description-less annotation',
+      );
+      expect(result.stderr + result.stdout).toContain(
+        'tests/missing-description.spec.ts:',
+      );
       expect(result.stderr + result.stdout).not.toContain(fixtureDir);
-      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
   });
 
   it('normalizes Playwright control annotations without executing test bodies', async () => {
-    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-control-annotations-'));
+    const fixtureDir = await mkdtemp(
+      join(demoDir, '.tmp-control-annotations-'),
+    );
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
     const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
@@ -326,7 +411,9 @@ describe('Playwright discovery reporter', () => {
 
       expect(result.status, result.stderr || result.stdout).toBe(0);
       const inventory = await loadInventory(fixtureInventory);
-      expect(inventory.tests.map(({ title, status }) => ({ title, status }))).toEqual(
+      expect(
+        inventory.tests.map(({ title, status }) => ({ title, status })),
+      ).toEqual(
         expect.arrayContaining([
           { title: 'ordinary skip', status: 'SKIPPED' },
           { title: 'ordinary fixme', status: 'SKIPPED' },
@@ -335,21 +422,81 @@ describe('Playwright discovery reporter', () => {
           { title: 'nested skip', status: 'SKIPPED' },
         ]),
       );
-      expect(inventory.tests.flatMap((test) => test.annotations)).not.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: 'skip', description: expect.anything() as unknown }),
-          expect.objectContaining({ type: 'fixme', description: expect.anything() as unknown }),
-          expect.objectContaining({ type: 'fail', description: expect.anything() as unknown }),
-          expect.objectContaining({ type: 'slow', description: expect.anything() as unknown }),
-        ]),
+      const ordinaryControlAnnotations = inventory.tests
+        .filter((item) =>
+          [
+            'ordinary skip',
+            'ordinary fixme',
+            'ordinary fail',
+            'ordinary slow',
+            'nested skip',
+          ].includes(item.title),
+        )
+        .flatMap((test) => test.annotations);
+      expect(ordinaryControlAnnotations).not.toContainEqual(
+        expect.objectContaining({ type: 'skip' }),
+      );
+      expect(ordinaryControlAnnotations).not.toContainEqual(
+        expect.objectContaining({ type: 'fixme' }),
+      );
+      expect(ordinaryControlAnnotations).not.toContainEqual(
+        expect.objectContaining({ type: 'fail' }),
+      );
+      expect(ordinaryControlAnnotations).not.toContainEqual(
+        expect.objectContaining({ type: 'slow' }),
       );
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
   });
 
+  it('preserves described Playwright control annotations without executing test bodies', async () => {
+    const fixtureDir = await mkdtemp(
+      join(demoDir, '.tmp-described-control-annotation-'),
+    );
+    const fixtureTests = join(fixtureDir, 'tests');
+    const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
+    const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
+
+    try {
+      await cp(join(demoDir, 'tests'), fixtureTests, { recursive: true });
+      await cp(join(demoDir, 'playwright.config.ts'), fixtureConfig);
+      await writeFile(
+        join(fixtureTests, 'described-control-annotation.spec.ts'),
+        `import { test } from '@playwright/test';\n\n` +
+          `test.describe('described slow control scope', () => {\n` +
+          `  test.slow(true, 'intentional timing exception');\n` +
+          `  test('preserves described slow control', () => {\n` +
+          `    throw new Error('discovery executed a test body');\n` +
+          `  });\n` +
+          `});\n`,
+      );
+      await rm(executionMarker, { force: true });
+
+      const result = runDiscovery({ configFile: fixtureConfig });
+
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+      await expect(readFile(executionMarker, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      const inventory = await loadInventory(fixtureInventory);
+      expect(
+        inventory.tests.find(
+          (item) => item.title === 'preserves described slow control',
+        )?.annotations,
+      ).toContainEqual({
+        type: 'slow',
+        description: 'intentional timing exception',
+      });
+    } finally {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects matching provisional IDs from separate same-file declarations', async () => {
-    const fixtureDir = await mkdtemp(join(demoDir, '.tmp-provisional-collision-'));
+    const fixtureDir = await mkdtemp(
+      join(demoDir, '.tmp-provisional-collision-'),
+    );
     const fixtureTests = join(fixtureDir, 'tests');
     const fixtureConfig = join(fixtureDir, 'playwright.config.ts');
     const fixtureInventory = join(fixtureDir, '.proofline/inventory.json');
@@ -378,11 +525,18 @@ describe('Playwright discovery reporter', () => {
           `});\n`,
       );
 
-      const result = runDiscovery({ configFile: fixtureConfig, useConfigReporter: true });
+      const result = runDiscovery({
+        configFile: fixtureConfig,
+        useConfigReporter: true,
+      });
 
       expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain('duplicate stable test IDs');
-      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(result.stderr + result.stdout).toContain(
+        'duplicate stable test IDs',
+      );
+      await expect(readFile(fixtureInventory, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
@@ -408,12 +562,21 @@ describe('Playwright discovery reporter', () => {
           `});\n`,
       );
 
-      const result = runDiscovery({ configFile: fixtureConfig, useConfigReporter: true });
+      const result = runDiscovery({
+        configFile: fixtureConfig,
+        useConfigReporter: true,
+      });
 
       expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain('Proofline discovery failed:');
-      await expect(readFile(blockedOutput, 'utf8')).resolves.toBe('not a directory\n');
-      await expect(readFile(join(blockedOutput, 'inventory.json'), 'utf8')).rejects.toBeDefined();
+      expect(result.stderr + result.stdout).toContain(
+        'Proofline discovery failed:',
+      );
+      await expect(readFile(blockedOutput, 'utf8')).resolves.toBe(
+        'not a directory\n',
+      );
+      await expect(
+        readFile(join(blockedOutput, 'inventory.json'), 'utf8'),
+      ).rejects.toBeDefined();
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
@@ -439,15 +602,23 @@ describe('Playwright discovery reporter', () => {
           `});\n`,
       );
 
-      const result = runDiscovery({ configFile: fixtureConfig, useConfigReporter: true });
+      const result = runDiscovery({
+        configFile: fixtureConfig,
+        useConfigReporter: true,
+      });
 
       expect(result.status).not.toBe(0);
-      expect(result.stderr + result.stdout).toContain('Proofline discovery failed:');
+      expect(result.stderr + result.stdout).toContain(
+        'Proofline discovery failed:',
+      );
       await expect(readdir(outputDirectory)).resolves.toEqual([]);
-      expect((await readdir(fixtureDir)).filter((name) => name.startsWith(`${basename(outputDirectory)}.`))).toEqual([]);
+      expect(
+        (await readdir(fixtureDir)).filter((name) =>
+          name.startsWith(`${basename(outputDirectory)}.`),
+        ),
+      ).toEqual([]);
     } finally {
       await rm(fixtureDir, { recursive: true, force: true });
     }
   });
-
 });

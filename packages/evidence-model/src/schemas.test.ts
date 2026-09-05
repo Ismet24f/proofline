@@ -57,7 +57,10 @@ describe('parseInventory', () => {
 
   it.each([
     [{ repository: 'acme/payments', tests: [] }, 'schemaVersion'],
-    [{ schemaVersion: 2, repository: 'acme/payments', tests: [] }, 'schemaVersion'],
+    [
+      { schemaVersion: 2, repository: 'acme/payments', tests: [] },
+      'schemaVersion',
+    ],
     [{ schemaVersion: 1, repository: '', tests: [] }, 'repository'],
   ])('rejects invalid payload %#', (payload, field) => {
     expect(() => parseInventory(payload)).toThrow(field);
@@ -67,18 +70,33 @@ describe('parseInventory', () => {
     ['PL-T-00001', 'EXPLICIT'],
     ['PL-P-aaaaaaaaaaaaaaaaaaaa', 'PROVISIONAL'],
   ])('accepts stable test ID %s', (id, stability) => {
-    expect(testDefinitionSchema.parse({ ...testDefinition, id, stability }).id).toBe(id);
+    expect(
+      testDefinitionSchema.parse({ ...testDefinition, id, stability }).id,
+    ).toBe(id);
   });
 
-  it.each(['PL-T-1', 'PL-P-AAAAAAAAAAAAAAAAAAAA'])('rejects malformed stable test ID %s', (id) => {
-    expect(() => testDefinitionSchema.parse({ ...testDefinition, id })).toThrow('id');
-  });
+  it.each(['PL-T-1', 'PL-P-AAAAAAAAAAAAAAAAAAAA'])(
+    'rejects malformed stable test ID %s',
+    (id) => {
+      expect(() =>
+        testDefinitionSchema.parse({ ...testDefinition, id }),
+      ).toThrow('id');
+    },
+  );
 
   it.each([
-    [{ id: 'PL-T-00001', stability: 'PROVISIONAL' }, 'PL-T IDs require EXPLICIT stability'],
-    [{ id: 'PL-P-aaaaaaaaaaaaaaaaaaaa', stability: 'EXPLICIT' }, 'PL-P IDs require PROVISIONAL stability'],
+    [
+      { id: 'PL-T-00001', stability: 'PROVISIONAL' },
+      'PL-T IDs require EXPLICIT stability',
+    ],
+    [
+      { id: 'PL-P-aaaaaaaaaaaaaaaaaaaa', stability: 'EXPLICIT' },
+      'PL-P IDs require PROVISIONAL stability',
+    ],
   ])('rejects test identity/stability mismatch: %s', (identity) => {
-    expect(() => testDefinitionSchema.parse({ ...testDefinition, ...identity })).toThrow('stability');
+    expect(() =>
+      testDefinitionSchema.parse({ ...testDefinition, ...identity }),
+    ).toThrow('stability');
   });
 
   it('rejects duplicate stable test IDs in an inventory', () => {
@@ -94,13 +112,25 @@ describe('parseInventory', () => {
   });
 
   it('requires oldPath exactly for renamed files', () => {
-    expect(changedFileSchema.parse({ status: 'RENAMED', path: 'new.ts', oldPath: 'old.ts' })).toMatchObject({
+    expect(
+      changedFileSchema.parse({
+        status: 'RENAMED',
+        path: 'new.ts',
+        oldPath: 'old.ts',
+      }),
+    ).toMatchObject({
       oldPath: 'old.ts',
     });
-    expect(() => changedFileSchema.parse({ status: 'RENAMED', path: 'new.ts' })).toThrow('oldPath');
-    expect(() => changedFileSchema.parse({ status: 'MODIFIED', path: 'file.ts', oldPath: 'old.ts' })).toThrow(
-      'oldPath',
-    );
+    expect(() =>
+      changedFileSchema.parse({ status: 'RENAMED', path: 'new.ts' }),
+    ).toThrow('oldPath');
+    expect(() =>
+      changedFileSchema.parse({
+        status: 'MODIFIED',
+        path: 'file.ts',
+        oldPath: 'old.ts',
+      }),
+    ).toThrow('oldPath');
   });
 });
 
@@ -112,9 +142,19 @@ describe('evidenceAssertionSchema', () => {
     ['BLOCKED', [], undefined],
     ['NOT_AFFECTED', [], undefined],
     ['ACCEPTED_RISK', [], 'approved verbally'],
-  ])('rejects %s without its required support', (state, evidenceIds, message) => {
-    expect(evidenceAssertionSchema.safeParse({ ...evidenceAssertion, state, evidenceIds, message }).success).toBe(false);
-  });
+  ])(
+    'rejects %s without its required support',
+    (state, evidenceIds, message) => {
+      expect(
+        evidenceAssertionSchema.safeParse({
+          ...evidenceAssertion,
+          state,
+          evidenceIds,
+          message,
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it.each([
     ['FAILED', ['evidence-1'], undefined],
@@ -127,41 +167,147 @@ describe('evidenceAssertionSchema', () => {
     ['UNKNOWN', [], undefined],
     ['ACCEPTED_RISK', ['evidence-1'], undefined],
   ])('accepts %s with valid support', (state, evidenceIds, message) => {
-    expect(evidenceAssertionSchema.safeParse({ ...evidenceAssertion, state, evidenceIds, message }).success).toBe(true);
+    expect(
+      evidenceAssertionSchema.safeParse({
+        ...evidenceAssertion,
+        state,
+        evidenceIds,
+        message,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts CODE_VALIDATED with evidence', () => {
+    expect(
+      evidenceAssertionSchema.safeParse({
+        ...evidenceAssertion,
+        state: 'CODE_VALIDATED',
+        evidenceIds: ['review-2026-09-04'],
+      }).success,
+    ).toBe(true);
   });
 });
 
 describe('releaseDecisionSchema', () => {
+  it('accepts a valid PASS decision', () => {
+    expect(releaseDecisionSchema.safeParse(releaseDecision).success).toBe(true);
+  });
+
   it.each([
-    ['a policy violation', { violations: [{ code: 'blocking-policy', message: 'payment is unsafe', evidenceIds: [] }] }],
-    ['a FAILED assertion', { assertions: [{ ...evidenceAssertion, state: 'FAILED' }] }],
-    ['a BLOCKED assertion', { assertions: [{ ...evidenceAssertion, state: 'BLOCKED' }] }],
-    ['an UNTESTED assertion', { assertions: [{ ...evidenceAssertion, state: 'UNTESTED', evidenceIds: [] }] }],
-    ['an UNKNOWN assertion', { assertions: [{ ...evidenceAssertion, state: 'UNKNOWN', evidenceIds: [] }] }],
+    [
+      'a policy violation',
+      {
+        violations: [
+          {
+            code: 'blocking-policy',
+            message: 'payment is unsafe',
+            evidenceIds: [],
+          },
+        ],
+      },
+    ],
+    [
+      'a FAILED assertion',
+      { assertions: [{ ...evidenceAssertion, state: 'FAILED' }] },
+    ],
+    [
+      'a BLOCKED assertion',
+      { assertions: [{ ...evidenceAssertion, state: 'BLOCKED' }] },
+    ],
+    [
+      'an UNTESTED assertion',
+      {
+        assertions: [
+          { ...evidenceAssertion, state: 'UNTESTED', evidenceIds: [] },
+        ],
+      },
+    ],
+    [
+      'an UNKNOWN assertion',
+      {
+        assertions: [
+          { ...evidenceAssertion, state: 'UNKNOWN', evidenceIds: [] },
+        ],
+      },
+    ],
   ])('rejects PASS with %s', (_description, override) => {
-    expect(releaseDecisionSchema.safeParse({ ...releaseDecision, ...override }).success).toBe(false);
+    expect(
+      releaseDecisionSchema.safeParse({ ...releaseDecision, ...override })
+        .success,
+    ).toBe(false);
   });
 
   it('rejects HOLD without a violation, FAILED assertion, or BLOCKED assertion', () => {
-    expect(releaseDecisionSchema.safeParse({ ...releaseDecision, verdict: 'HOLD' }).success).toBe(false);
+    expect(
+      releaseDecisionSchema.safeParse({ ...releaseDecision, verdict: 'HOLD' })
+        .success,
+    ).toBe(false);
   });
 
   it.each([
-    ['a policy violation', { violations: [{ code: 'blocking-policy', message: 'payment is unsafe', evidenceIds: [] }] }],
-    ['a FAILED assertion', { assertions: [{ ...evidenceAssertion, state: 'FAILED' }] }],
-    ['a BLOCKED assertion', { assertions: [{ ...evidenceAssertion, state: 'BLOCKED' }] }],
+    [
+      'a policy violation',
+      {
+        violations: [
+          {
+            code: 'blocking-policy',
+            message: 'payment is unsafe',
+            evidenceIds: [],
+          },
+        ],
+      },
+    ],
+    [
+      'a FAILED assertion',
+      { assertions: [{ ...evidenceAssertion, state: 'FAILED' }] },
+    ],
+    [
+      'a BLOCKED assertion',
+      { assertions: [{ ...evidenceAssertion, state: 'BLOCKED' }] },
+    ],
   ])('accepts HOLD with %s', (_description, override) => {
-    expect(releaseDecisionSchema.safeParse({ ...releaseDecision, verdict: 'HOLD', ...override }).success).toBe(true);
+    expect(
+      releaseDecisionSchema.safeParse({
+        ...releaseDecision,
+        verdict: 'HOLD',
+        ...override,
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects INCOMPLETE without an UNTESTED or UNKNOWN assertion', () => {
-    expect(releaseDecisionSchema.safeParse({ ...releaseDecision, verdict: 'INCOMPLETE' }).success).toBe(false);
+    expect(
+      releaseDecisionSchema.safeParse({
+        ...releaseDecision,
+        verdict: 'INCOMPLETE',
+      }).success,
+    ).toBe(false);
   });
 
   it.each([
-    ['an UNTESTED assertion', { assertions: [{ ...evidenceAssertion, state: 'UNTESTED', evidenceIds: [] }] }],
-    ['an UNKNOWN assertion', { assertions: [{ ...evidenceAssertion, state: 'UNKNOWN', evidenceIds: [] }] }],
+    [
+      'an UNTESTED assertion',
+      {
+        assertions: [
+          { ...evidenceAssertion, state: 'UNTESTED', evidenceIds: [] },
+        ],
+      },
+    ],
+    [
+      'an UNKNOWN assertion',
+      {
+        assertions: [
+          { ...evidenceAssertion, state: 'UNKNOWN', evidenceIds: [] },
+        ],
+      },
+    ],
   ])('accepts INCOMPLETE with %s', (_description, override) => {
-    expect(releaseDecisionSchema.safeParse({ ...releaseDecision, verdict: 'INCOMPLETE', ...override }).success).toBe(true);
+    expect(
+      releaseDecisionSchema.safeParse({
+        ...releaseDecision,
+        verdict: 'INCOMPLETE',
+        ...override,
+      }).success,
+    ).toBe(true);
   });
 });

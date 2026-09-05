@@ -10,10 +10,10 @@ Proofline currently generates a schema-valid inventory of a Playwright suite thr
 
 ## Run from the source workspace
 
-The packages in this repository are not yet published. Install and use the source workspace; this is not an npm consumer installation flow. While PR #1 is open, the Phase 0 source is temporarily available on the `feature/phase-0-cli-alpha` branch.
+The packages in this repository are not yet published. Install and use the source workspace; this is not an npm consumer installation flow. The default-branch clone below is the merge-state installation path. Until this Phase 0 source is merged, the public default branch does not yet contain it.
 
 ```sh
-git clone --branch feature/phase-0-cli-alpha --single-branch https://github.com/Ismet24f/proofline.git
+git clone https://github.com/Ismet24f/proofline.git
 cd proofline
 corepack enable
 pnpm install --frozen-lockfile
