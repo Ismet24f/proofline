@@ -13,20 +13,18 @@ the following:
    engineering manager, or Head of QA?
 2. Does the participant's team use Playwright?
 3. Does the participant's team use GitHub Actions?
-4. Is this a completed external interview?
+4. Is this a completed external interview, and what is its ISO 8601 completion
+   timestamp with timezone?
 
-Record the role and tool-use answers in the scorecard. For every counted
-interview, the `notes` field must contain the exact, case-sensitive tokens in
-this canonical form: `external=yes; completed=yes`.
+Record `external`, role, tool use, and `completed_at` in their dedicated
+scorecard fields. `external=yes` means the participant represents a team
+outside the Proofline operating team. If a predicate is not evidenced, mark
+the interview excluded and record why; do not count it or start the window.
 
-- `external=yes` means the participant represents a team outside the Proofline
-  operating team.
-- `completed=yes` means the interview was conducted and the qualification plus
-  problem-interview evidence was recorded.
-
-If a qualifying predicate is not evidenced, or either exact notes token is
-absent, mark the interview excluded and record why; do not count it toward the
-gate or start the 42-day clock.
+The formal cohort freezes at the first 12 qualified interviews ordered by
+`completed_at` and then `interview_id`. Interview 13 and later cannot change
+any formal interview-derived measure. See the field dictionary before
+recording data.
 
 ## NARROW job classification
 
@@ -38,7 +36,7 @@ these case-sensitive `notes` tokens: `narrow_job=reporting`,
 `narrow_job_evidence_ref=E-<alias>`. `<alias>` must be a non-empty opaque
 identifier with no customer, participant, repository, PR, or workstation
 identifier. Example token order for a counted non-`none` interview:
-`external=yes; completed=yes; narrow_job=reporting; narrow_job_evidence_ref=E-example`.
+`narrow_job=reporting; narrow_job_evidence_ref=E-example`.
 
 Do not infer a classification. A missing, duplicated, or unrecognized
 `narrow_job` token is excluded from the NARROW metric. `narrow_job=none`
@@ -59,9 +57,16 @@ records an explicit non-match and is not a NARROW signal.
 7. How many people and hours were involved in planning and reporting?
 8. Which current tools are paid, and what would break if you removed them?
 9. Tell me about the last escaped defect related to missing or misleading evidence.
-10. Rank release planning/evidence among your top five QA pains. Record whether
-    it is in the top three.
-11. If the demonstrated problem supports only reporting, skip/flake visibility,
+10. Rank **selecting the Playwright tests affected by a code change** among the
+    participant's top five release pains. Record its numeric rank from 1 to 5,
+    or leave the field blank if it is not in the top five.
+11. Separately rank **required CI being green while one or more expected
+    Playwright tests were absent, skipped, incomplete, or green only after a
+    retry**. Record 1 to 5, or blank if it is not in the top five. Do not ask
+    for or record a generic release-pain rank or a manual top-three flag.
+12. If either exact pain is ranked 1, 2, or 3, the scorecard derives one narrow
+    top-three result for this interview; two qualifying ranks still count once.
+13. If the demonstrated problem supports only reporting, skip/flake visibility,
     or audit packets, record that exact narrow-job token, a non-identifying
     quoted problem, and an alias-safe evidence reference; otherwise record
     `narrow_job=none`.
@@ -84,6 +89,11 @@ After the participant has demonstrated the problem with a real example:
    that person actually discussed a concrete price and next step, with an
    evidence reference. A participant's prediction, general interest, or a
    price discussion without buyer/commercial authority is not a commitment.
+4. Complete the interview-linked follow-up, record its ISO 8601 timestamp in
+   `follow_up_completed_at`, and cite an alias-safe
+   `follow_up_evidence_reference`. The gate's all-follow-ups-complete measure
+   covers exactly the frozen 12 interview IDs; a timestamp or reference alone
+   is incomplete.
 
 Do not pitch before qualification and the problem questions are complete. Do
 not imply availability, pricing, customer traction, or a commitment that has

@@ -1,86 +1,86 @@
 # Validation Decision Gate
 
-This document is the authoritative Phase 0 decision rule. It supersedes any
-earlier interview-count, alpha-commitment, rate, or narrative rule. The gate
-is based only on completed, attributable records; it does not infer traction
-from interest, incomplete sampling, or opinions without an example.
+This document is the authoritative Phase 0 decision rule. It supersedes every
+earlier interview-count, alpha-commitment, recommendation-benchmark, header,
+rate, or narrative rule. `docs/validation/field-dictionary.md` is normative for
+field types, aliases, uniqueness, deterministic de-duplication, and row
+countability. Only completed, attributable, countable records may affect the
+gate; interest and incomplete or inferred evidence do not count.
 
-## Window and qualifying predicates
-
-The fixed evidence window begins only on the date of the first completed
-qualified external interview. It does not begin on document creation, project
-start, or an internal conversation.
+## Window, qualification, and frozen samples
 
 ```text
-window_end = first_qualified_interview_date + 42 calendar days
-qualified_interview = role is QA lead, senior QA/automation engineer, release owner, engineering manager, or Head of QA AND team uses Playwright AND team uses GitHub Actions
-successful_external_install = external participant completes inventory generation without live implementation help in <= 60 minutes
-green_but_unverified = merged PR had green required CI AND at least one manually expected Playwright test was absent, skipped, incomplete, or only green after retry masking
+window_start = earliest completed_at among qualified interviews
+window_end = window_start + 42 calendar days
+qualified_interview = external=yes AND participant_role is allowed AND uses_playwright=yes AND uses_github_actions=yes AND completed_at is valid
+formal_interview_cohort = first 12 qualified interviews ordered by completed_at, then interview_id
+successful_external_install = first qualifying success for a distinct team_alias, completed unaided in <= 60 minutes
+countable_probe_row = authorized and eligible historical merged PR assessed under the complete two-pass protocol
+green_but_unverified = required CI was green AND at least one independently expected Playwright test was skipped, incomplete, retried, or absent
 ```
 
-`first_qualified_interview_date` is the date of the first *completed,
-qualified external* interview. A record is not qualified until every predicate
-above is evidenced. For every counted interview, the `notes` field must
-contain these exact, case-sensitive tokens in this canonical form:
-`external=yes; completed=yes`.
+Normalize timestamps to UTC for comparison. `window_end` is the same UTC clock
+time 42 calendar dates after `window_start`. Only records completed on or after
+`window_start` and on or before `window_end` can affect the day-42 result.
 
-- `external=yes` means the participant represents a team outside the Proofline
-  operating team.
-- `completed=yes` means the interview was conducted and the qualification plus
-  problem-interview evidence was recorded.
+`qualified_interview_count >= 12` is the interview sample-completeness rule.
+When the twelfth qualified interview exists, freeze the ordered first 12 by
+`completed_at` ascending and `interview_id` ascending. Record those IDs and the
+freeze timestamp. Every interview-derived measure uses only this formal cohort:
+the narrow top-three count, median manual hours, early interview STOP,
+all-follow-ups-complete, and every narrow-job count. Interview 13 and later,
+late inserts, and hindsight replacements cannot change the formal metrics.
 
-Records lacking either exact token are excluded, even if their role and tool
-answers otherwise match. Record excluded interviews and the exclusion reason;
-do not backdate the window from an unqualified, incomplete, or internal
-conversation.
-
-For the qualitative NARROW signal, evaluate only the frozen first 12 qualified
-interviews in chronological completion order. Each may have exactly one
-case-sensitive `narrow_job` token in `notes`:
-`narrow_job=reporting`, `narrow_job=skip_flake_visibility`,
-`narrow_job=audit_packets`, or `narrow_job=none`. A non-`none` token counts
-only when the same scorecard has a non-empty `quoted_problem` and an
-alias-safe, case-sensitive `narrow_job_evidence_ref=E-<alias>` token in
-`notes`. `<alias>` is a non-empty opaque identifier; it must not contain a
-customer, participant, repository, PR, or workstation identifier. A missing,
-duplicated, or unrecognized `narrow_job` token is not inferred and never
-counts toward the NARROW signal; record it as an exclusion.
+The probe also has a frozen formal sample: two explicitly authorized repository
+aliases and the first 10 countable two-pass rows completed for each. Record the
+20 probe IDs and the sample freeze timestamp. Extra, unauthorized, ineligible,
+hindsight-selected, or protocol-invalid rows cannot replace a formal row or
+affect `probe_hit_count`.
 
 ## Measures
 
 ```text
-top_three_count = count(qualified interviews where top_three = yes)
-median_manual_hours = median(hours_planning + hours_reporting for qualified interviews)
-successful_install_count = count(successful external installs)
-probe_hit_count = count(green_but_unverified = yes across 20 authorized historical PRs)
-written_design_partner_count = count(written commitments with evidence reference)
-priced_commitment_count = count(commitments where a buyer discussed a concrete price and next step)
-cost_comparison_count = count(complete team-release cost comparisons)
+qualified_interview_count = count(all qualified interviews completed in the window)
+narrow_top_three(interview) = affected_test_selection_rank in 1..3 OR green_but_unverified_rank in 1..3
+narrow_top_three_count = count(formal cohort where narrow_top_three(interview) is true)
+median_manual_hours = median(hours_planning + hours_reporting for the formal cohort)
+all_formal_follow_ups_complete = every formal-cohort interview has linked follow_up_completed_at and follow_up_evidence_reference
+complete_diary_team_count = count(distinct team_alias values represented by their earliest complete workflow diary)
+successful_install_count = count(distinct team_alias values represented by their earliest successful external install)
+probe_hit_count = count(green_but_unverified=yes in the frozen 20-row formal probe sample)
+written_design_partner_count = count(distinct team_alias values whose deterministically selected active commitment is written_design_partner)
+priced_commitment_count = count(distinct team_alias values whose deterministically selected active commitment is priced_commitment and has buyer authority, concrete price discussion, and next step)
+cost_comparison_count = count(counted diary teams with one complete same-release cost comparison)
 cost_overrun_count = count(complete cost comparisons where metadata_maintenance_hours > expected_release_effort_saved_hours)
-narrow_job_count(job) = count(frozen first 12 qualified interviews with the same non-none narrow_job token, non-empty quoted_problem, and narrow_job_evidence_ref)
+narrow_job_count(job) = count(formal-cohort interviews with the same supported non-none narrow_job token)
 ```
 
-For every measure, retain both the numerator and denominator, included record
-IDs, and exclusions with reasons. A completed workflow diary is counted only
-when it is from a distinct team and contains its required details, activity
-log, release summary, and evidence notes. An installation counts only when
-the participant is external, completed inventory generation unaided, and took
-60 minutes or less. A probe denominator contains only authorized, eligible,
-merged historical PRs; exactly 10 must be assessed for each of two repository
-aliases before the 20-PR probe condition is complete.
+The two narrow pains are exact: selecting tests affected by a change and green
+required CI that did not actually verify all expected tests. A generic release
+pain rank or manually entered top-three flag is not a substitute. A formal
+interview contributes at most one to `narrow_top_three_count`, even if both
+exact ranks are 1–3.
 
-A priced commitment is countable only when `participant_role` identifies the
-person who discussed the price and next step as an authorized buyer or
-commercial authority. A participant's prediction of what a buyer might pay,
-or a price discussion without that authority, never counts.
+For every measure retain the numerator, denominator, included primary IDs, and
+exclusions with reasons. Apply all uniqueness, evidence, status, alias,
+de-duplication, tie-break, linkage, and type rules in the field dictionary.
+Specifically:
 
-A complete team-release cost comparison uses non-negative decimal hours for
-the same team and observed release diary. `metadata_maintenance_hours` is the
-participant's actual time creating or updating repository metadata for the
-observed inventory/probe workflow. `expected_release_effort_saved_hours` is
-that participant's recorded estimate of release effort the workflow would save
-on that same release. Retain both values and their evidence references; do not
-infer either value. This comparison does not require a recommendation engine.
+- count at most one complete workflow diary, one successful install, and one
+  active commitment per distinct `team_alias`, using the dictionary's earliest
+  deterministic choice;
+- withdrawn or expired commitments never count, and one team can contribute to
+  only one commitment measure;
+- a priced commitment requires recorded buyer/commercial authority;
+- all-formal-follow-ups-complete means all 12 frozen interviews, not a growing
+  day-42 set, have valid linked completion timestamps and evidence references;
+- the formal diary sample is the first three distinct-team counted diaries by
+  release date, then diary ID; three complete cost comparisons means one for
+  each frozen formal-diary team, with both values observed for that release; and
+- a probe row counts only when explicit repository authorization is evidenced,
+  the selector froze an independently sourced expected-test set before CI
+  execution evidence was revealed, a distinct verifier checked the result, and
+  every required timestamp and evidence reference is valid.
 
 ## Authoritative outcomes
 
@@ -88,153 +88,158 @@ infer either value. This comparison does not require a recommendation engine.
 
 PROCEED only when all are true by day 42:
 
-- 12 qualified interviews completed;
-- `top_three_count >= 6`;
-- `median_manual_hours >= 2`;
-- 3 complete workflow diaries from 3 teams;
-- `successful_install_count >= 3`;
-- 2 authorized repositories with exactly 10 eligible merged PRs assessed per repository;
-- `probe_hit_count >= 3 of 20`;
+- `qualified_interview_count >= 12` and the formal first-12 cohort is frozen;
+- `narrow_top_three_count >= 6` out of the frozen 12;
+- `median_manual_hours >= 2` for the frozen 12;
+- `complete_diary_team_count >= 3` from three distinct teams;
+- `successful_install_count >= 3` from three distinct external teams;
+- the frozen probe sample contains exactly 10 countable rows for each of two
+  explicitly authorized repository aliases;
+- `probe_hit_count >= 3` out of the frozen 20;
 - `written_design_partner_count >= 2 OR priced_commitment_count >= 1`;
-- 3 complete team-release cost comparisons, one for each workflow-diary team,
-  with `cost_overrun_count = 0`.
+- `cost_comparison_count = 3`, one for each counted diary team; and
+- `cost_overrun_count = 0` out of those three complete comparisons.
 
 ### STOP
 
 At day 42, STOP when any is true:
 
 - `successful_install_count < 2 AND written_design_partner_count = 0`;
-- `probe_hit_count <= 1 after all 20 eligible PRs are assessed`;
-- `12 interviews are complete AND (top_three_count < 4 OR median_manual_hours < 1)`;
-- `written_design_partner_count = 0 AND priced_commitment_count = 0 after all qualified-interview follow-ups are complete`;
-- all 3 required team-release cost comparisons are complete AND
-  `cost_overrun_count >= 1`.
+- `probe_hit_count <= 1` after the frozen 20-row probe sample is complete;
+- the formal interview cohort is complete and (`narrow_top_three_count < 4 OR
+median_manual_hours < 1`);
+- `written_design_partner_count = 0 AND priced_commitment_count = 0` after
+  `all_formal_follow_ups_complete = true`;
+- `cost_comparison_count = 3 AND cost_overrun_count >= 1`.
 
 Before day 42, STOP only when one of these terminal conditions is conclusively
 known from its complete frozen sample:
 
-- after all 20 eligible probe PRs are assessed, `probe_hit_count <= 1`;
-- after the first 12 qualified completed interviews, freeze that cohort by
-  chronological completion; STOP if `top_three_count < 4 OR
-  median_manual_hours < 1` for that frozen cohort.
+- the frozen 20-row probe sample is complete and `probe_hit_count <= 1`; or
+- the formal first-12 interview cohort is frozen and
+  (`narrow_top_three_count < 4 OR median_manual_hours < 1`).
 
-All other STOP rules are evaluated only at day 42. The frozen first-12 cohort
-drives both the before-day-42 interview STOP and the day-42 `narrow_job`
-metric; retain its ordered interview IDs and completion dates in the gate
-record. At day 42, `top_three_count` and `median_manual_hours` use all
-qualified interviews completed in the window, as defined in Measures.
+All other STOP rules are evaluated only at day 42.
 
 ### NARROW
 
-NARROW at day 42 only when its core sample is complete, PROCEED and STOP are
-both false, and at least one signal below is true. A complete NARROW core
-sample has at least 12 qualified interviews, 3 complete workflow diaries from
-distinct teams, all qualified-interview follow-ups complete, exactly 20
-eligible PRs assessed as 10 per authorized repository alias, 3 complete
-team-release cost comparisons, and 2 successful unaided external installs. No
-NARROW signal can replace a missing core sample; that case reaches the final
-insufficient-evidence STOP.
+NARROW at day 42 only when its complete core sample exists, PROCEED and STOP
+are both false, and at least one signal below is true.
 
-- `top_three_count is 4 or 5`;
-- `median_manual_hours is >= 1 and < 2`;
+The complete NARROW core sample requires:
+
+- `qualified_interview_count >= 12` and the frozen formal cohort;
+- `complete_diary_team_count >= 3` from three distinct teams;
+- `all_formal_follow_ups_complete = true`;
+- the complete frozen two-repository/20-row probe sample;
+- `cost_comparison_count = 3` with `cost_overrun_count = 0`; and
+- `successful_install_count = 2` from two distinct external teams.
+
+The objective NARROW signals are:
+
+- `narrow_top_three_count` is 4 or 5 out of the frozen 12;
+- `median_manual_hours >= 1 AND median_manual_hours < 2` for the frozen 12;
 - `successful_install_count = 2`;
-- `probe_hit_count = 2 of 20`;
-- `narrow_job_count(reporting) >= 4`,
-  `narrow_job_count(skip_flake_visibility) >= 4`, or
-  `narrow_job_count(audit_packets) >= 4`.
+- `probe_hit_count = 2` out of the frozen 20;
+- `narrow_job_count(reporting) >= 4` out of the frozen 12;
+- `narrow_job_count(skip_flake_visibility) >= 4` out of the frozen 12; or
+- `narrow_job_count(audit_packets) >= 4` out of the frozen 12.
 
-The NARROW rationale must identify the supported smaller workflow, its exact
-token value, the frozen interview IDs, their quoted problems, their alias-safe
-evidence references, and the capabilities to remove or defer.
+Each counted narrow-job row requires its exact token, a non-empty alias-safe
+quoted problem, and a linked alias-safe evidence reference as defined in the
+field dictionary. The NARROW rationale identifies the supported token,
+interview IDs, quotes, evidence references, and capabilities to remove/defer.
 
 ## Evaluation order and completeness
 
-Before day 42, evaluate only the two terminal STOP conditions above after
-their complete frozen samples exist. If neither is true, continue collecting
-evidence; no other STOP, NARROW, or PROCEED outcome is available before day
-42.
+Before day 42, evaluate only the two terminal STOP conditions after their
+complete frozen samples exist. Otherwise continue collecting evidence; no
+PROCEED or NARROW result is available early.
 
 At day 42, evaluate in this exact order:
 
 1. `PROCEED` if every PROCEED condition is true.
-2. Otherwise `STOP` if a STOP rule is true.
-3. Otherwise `NARROW` if a NARROW signal is true.
+2. Otherwise `STOP` if any explicit STOP rule is true.
+3. Otherwise `NARROW` if the complete NARROW core sample exists and a NARROW
+   signal is true.
 4. Otherwise `STOP` for insufficient evidence.
 
-Incomplete sampling at day 42 can never be called `PROCEED`. This precedence
-is total: every day-42 evaluation ends in exactly one of PROCEED, STOP, or
-NARROW, with the final STOP covering insufficient evidence. A before-day-42
-terminal STOP ends collection and records STOP immediately.
+Incomplete, duplicate, unauthorized, unlinked, hindsight-selected, or
+otherwise non-countable records can never produce PROCEED or fill a NARROW
+core sample. This precedence is total: every day-42 evaluation ends in exactly
+one result.
 
 ## Auditable gate record
 
-Complete every field below at the decision. Keep public templates blank and
-use team, company, repository, PR, and participant aliases only; evidence
-references must not expose customer or personal data in this repository.
+Complete every field at decision time. Keep the public templates blank and use
+aliases only; raw evidence stays private.
 
 ### Timing, authority, and outcome
 
-| Field | Value |
-| --- | --- |
-| First completed qualified external interview date | |
-| Day-42 deadline (`window_end`) | |
-| Decision owner | |
-| Decision date | |
-| Decision (`PROCEED`, `NARROW`, or `STOP`) | |
-| Evaluation timing (`immediate terminal` or `day 42`) | |
-| Decision rationale and applicable rule(s) | |
+| Field                                                                 | Value |
+| --------------------------------------------------------------------- | ----- |
+| Window start (`window_start`)                                         |       |
+| Day-42 deadline (`window_end`)                                        |       |
+| Formal interview cohort freeze timestamp                              |       |
+| Frozen ordered interview IDs (`completed_at`, then `interview_id`)    |       |
+| Authorized repository cohort freeze timestamp and two aliases         |       |
+| Formal probe sample freeze timestamp                                  |       |
+| Frozen probe IDs by repository alias                                  |       |
+| Formal diary sample freeze timestamp and three ordered diary/team IDs |       |
+| Decision owner alias                                                  |       |
+| Decision timestamp                                                    |       |
+| Decision (`PROCEED`, `NARROW`, or `STOP`)                             |       |
+| Evaluation timing (`immediate terminal` or `day 42`)                  |       |
+| Decision rationale and applicable rule(s)                             |       |
 
 ### Interview and diary evidence
 
-| Field | Numerator / denominator or calculation | Included record IDs | Exclusions and reasons |
-| --- | --- | --- | --- |
-| Qualified interviews completed | / 12 | | |
-| `top_three_count` | / qualified interviews | | |
-| `median_manual_hours` | ordered per-interview `(hours_planning + hours_reporting)` values and calculated median | | |
-| `narrow_job_count` by non-`none` value | `reporting`: / 12; `skip_flake_visibility`: / 12; `audit_packets`: / 12 | Frozen interview IDs, quoted problems, and alias-safe evidence references | Missing, duplicate, unrecognized, `none`, or unsupported-token reasons |
-| Complete workflow diaries from distinct teams | / 3 teams | | |
-| Qualified-interview follow-ups complete | / qualified interviews | | |
+| Field                            | Numerator / denominator or calculation                                       | Included record IDs                                              | Exclusions and reasons                    |
+| -------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------- |
+| `qualified_interview_count`      | / all interview rows in window; must be >= 12                                |                                                                  |                                           |
+| Formal interview cohort          | 12 / 12                                                                      | Ordered frozen IDs and completion timestamps                     |                                           |
+| `narrow_top_three_count`         | / 12                                                                         | Per-ID two exact ranks and derived result                        | Invalid/missing rank reasons              |
+| `median_manual_hours`            | ordered per-interview `(hours_planning + hours_reporting)` values and median | Frozen 12 IDs                                                    |                                           |
+| `narrow_job_count` by value      | `reporting`: / 12; `skip_flake_visibility`: / 12; `audit_packets`: / 12      | IDs, quotes, evidence references                                 | Missing/invalid/unsupported token reasons |
+| `all_formal_follow_ups_complete` | / 12                                                                         | Linked interview IDs, completion timestamps, evidence references | Missing/invalid linkage reasons           |
+| Complete workflow diaries        | / 3 distinct teams                                                           | Counted diary IDs and team aliases                               | Duplicate/incomplete diary reasons        |
 
-For `median_manual_hours`, record the ordered per-interview values as
-`interview_id: (hours_planning + hours_reporting) = value`, alongside the
-calculated median. Do not substitute a total or a division calculation for
-this ordered-value audit trail.
+For the median, record each ordered value as
+`interview_id: hours_planning + hours_reporting = value`, then the independent
+median calculation. Do not substitute a total or average.
 
 ### Installation evidence
 
-| Field | Numerator / denominator | Included install IDs and team aliases | Durations / exclusions and reasons |
-| --- | --- | --- | --- |
-| Successful external installs | / attempted external installs | | |
-| Unaided inventory generation within 60 minutes | / attempted external installs | | |
+| Field                               | Numerator / denominator             | Included install IDs and distinct team aliases | Durations / exclusions and reasons |
+| ----------------------------------- | ----------------------------------- | ---------------------------------------------- | ---------------------------------- |
+| `successful_install_count`          | / distinct external teams attempted | Earliest successful ID per team                | Duplicate/later/invalid rows       |
+| Unaided inventory within 60 minutes | / attempted external install rows   |                                                |                                    |
 
-### Probe evidence
+### Two-pass probe evidence
 
-| Field | Numerator / denominator | Repository aliases and included probe IDs | Exclusions and reasons |
-| --- | --- | --- | --- |
-| Authorized repositories assessed | / 2 | | |
-| Eligible merged PRs assessed — repository alias 1 | / exactly 10 | | |
-| Eligible merged PRs assessed — repository alias 2 | / exactly 10 | | |
-| `probe_hit_count` (`green_but_unverified = yes`) | / 20 | | |
+| Field                                         | Numerator / denominator | Included aliases and IDs                         | Exclusions and reasons            |
+| --------------------------------------------- | ----------------------- | ------------------------------------------------ | --------------------------------- |
+| Explicitly authorized repository aliases      | 2 / 2                   | Authorization timestamps and evidence references | Unauthorized/out-of-scope reasons |
+| Countable rows — repository alias 1           | 10 / 10                 | Ordered probe IDs                                | Eligibility/protocol reasons      |
+| Countable rows — repository alias 2           | 10 / 10                 | Ordered probe IDs                                | Eligibility/protocol reasons      |
+| Expected-set freeze before CI evidence reveal | 20 / 20                 | Per-ID source and timestamps                     | Hindsight/unfrozen reasons        |
+| Distinct selector/verifier roles              | 20 / 20                 | Per-ID selector and verifier aliases             | Same/missing alias reasons        |
+| Result verification complete                  | 20 / 20                 | Per-ID result timestamp and evidence reference   | Missing/invalid result reasons    |
+| `probe_hit_count`                             | / 20                    | Hit probe IDs                                    |                                   |
 
 ### Commitment and cost evidence
 
-| Field | Numerator / denominator | Included commitment IDs / evidence references | Exclusions and reasons |
-| --- | --- | --- | --- |
-| Written design-partner commitments with evidence reference | / commitment records | | |
-| Priced commitments with concrete price and next step | / commitment records | | |
-| Observed metadata/maintenance cost | / observed teams | | |
-| Participant-expected release effort saved | / observed teams | | |
-| Complete team-release cost comparisons | / 3 workflow-diary teams | | |
-| `cost_overrun_count` | / complete cost comparisons | | |
+| Field                          | Numerator / denominator                            | Included IDs / team aliases / references             | Exclusions and reasons                                  |
+| ------------------------------ | -------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| `written_design_partner_count` | / distinct teams with a selected active commitment | Earliest selected active row per team                | Duplicate, withdrawn, expired, missing-evidence reasons |
+| `priced_commitment_count`      | / distinct teams with a selected active commitment | Buyer authority, concrete price, next step, evidence | Invalid authority/type/status reasons                   |
+| `cost_comparison_count`        | / 3 counted diary teams                            | Diary IDs and same-release references                | Missing/mismatched comparison reasons                   |
+| `cost_overrun_count`           | / 3 complete comparisons                           | Three exact value pairs and derived results          |                                                         |
 
-## Evidence observations
-
-Use this table for the exact observations behind the decision. Do not replace
-the numerator, denominator, record IDs, or exclusion fields above with a
-narrative summary.
+### Evidence observations
 
 | Observation | Alias-based evidence reference | Implication |
-| --- | --- | --- |
-| | | |
-| | | |
-| | | |
+| ----------- | ------------------------------ | ----------- |
+|             |                                |             |
+|             |                                |             |
+|             |                                |             |
