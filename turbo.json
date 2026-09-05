@@ -1,0 +1,10 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+    "lint": { "dependsOn": ["^lint", "^build"] },
+    "typecheck": { "dependsOn": ["^typecheck", "^build"] },
+    "test": { "dependsOn": ["^build"] },
+    "@proofline/playwright-reporter#test": { "dependsOn": ["build", "^build"] }
+  }
+}
