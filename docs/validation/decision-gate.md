@@ -43,6 +43,8 @@ successful_install_count = count(successful external installs)
 probe_hit_count = count(green_but_unverified = yes across 20 authorized historical PRs)
 written_design_partner_count = count(written commitments with evidence reference)
 priced_commitment_count = count(commitments where a buyer discussed a concrete price and next step)
+cost_comparison_count = count(complete team-release cost comparisons)
+cost_overrun_count = count(complete cost comparisons where metadata_maintenance_hours > expected_release_effort_saved_hours)
 ```
 
 For every measure, retain both the numerator and denominator, included record
@@ -59,6 +61,14 @@ person who discussed the price and next step as an authorized buyer or
 commercial authority. A participant's prediction of what a buyer might pay,
 or a price discussion without that authority, never counts.
 
+A complete team-release cost comparison uses non-negative decimal hours for
+the same team and observed release diary. `metadata_maintenance_hours` is the
+participant's actual time creating or updating repository metadata for the
+observed inventory/probe workflow. `expected_release_effort_saved_hours` is
+that participant's recorded estimate of release effort the workflow would save
+on that same release. Retain both values and their evidence references; do not
+infer either value. This comparison does not require a recommendation engine.
+
 ## Authoritative outcomes
 
 ### PROCEED
@@ -72,7 +82,9 @@ PROCEED only when all are true by day 42:
 - `successful_install_count >= 3`;
 - 2 authorized repositories with exactly 10 eligible merged PRs assessed per repository;
 - `probe_hit_count >= 3 of 20`;
-- `written_design_partner_count >= 2 OR priced_commitment_count >= 1`.
+- `written_design_partner_count >= 2 OR priced_commitment_count >= 1`;
+- 3 complete team-release cost comparisons, one for each workflow-diary team,
+  with `cost_overrun_count = 0`.
 
 ### STOP
 
@@ -82,7 +94,8 @@ At day 42, STOP when any is true:
 - `probe_hit_count <= 1 after all 20 eligible PRs are assessed`;
 - `12 interviews are complete AND (top_three_count < 4 OR median_manual_hours < 1)`;
 - `written_design_partner_count = 0 AND priced_commitment_count = 0 after all qualified-interview follow-ups are complete`;
-- the observed metadata/maintenance cost is greater than the release effort participants expect to save.
+- all 3 required team-release cost comparisons are complete AND
+  `cost_overrun_count >= 1`.
 
 Before day 42, STOP only when one of these terminal conditions is conclusively
 known from its complete frozen sample:
@@ -98,8 +111,13 @@ interview IDs and completion dates in the gate record.
 
 ### NARROW
 
-NARROW at day 42 only when PROCEED and STOP are both false and at least one is
-true:
+NARROW at day 42 only when its core sample is complete, PROCEED and STOP are
+both false, and at least one signal below is true. A complete NARROW core
+sample has at least 12 qualified interviews, 3 complete workflow diaries from distinct
+teams, all qualified-interview follow-ups complete, exactly 20 eligible PRs
+assessed as 10 per authorized repository alias, and 3 complete team-release
+cost comparisons, plus 2 successful unaided external installs. No NARROW signal can replace a missing core sample; that
+case reaches the final insufficient-evidence STOP.
 
 - `top_three_count is 4 or 5`;
 - `median_manual_hours is >= 1 and < 2`;
@@ -186,7 +204,8 @@ this ordered-value audit trail.
 | Priced commitments with concrete price and next step | / commitment records | | |
 | Observed metadata/maintenance cost | / observed teams | | |
 | Participant-expected release effort saved | / observed teams | | |
-| Cost exceeds expected release effort saved | yes / no; supporting records | | |
+| Complete team-release cost comparisons | / 3 workflow-diary teams | | |
+| `cost_overrun_count` | / complete cost comparisons | | |
 
 ## Evidence observations
 

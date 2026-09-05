@@ -61,6 +61,21 @@ required for any diary used as a gate record.
 | Evidence shown to the decision owner | |
 | Follow-up or escaped-defect signal | |
 
+## Metadata/maintenance cost comparison
+
+Use this section only when the diary contributes a cost comparison to the
+gate. Both hour values must be non-negative decimal hours for this same team
+and observed release. Record actual participant time, not an inferred cost;
+the expected saved time is the same participant's recorded estimate for this
+release. This comparison concerns the inventory/probe workflow and does not
+require a recommendation engine.
+
+| Field | Value |
+| --- | --- |
+| Metadata/maintenance hours | |
+| Expected release effort saved hours | |
+| Evidence reference for both values | |
+
 ## Evidence notes
 
 Link or reference the artifact for each material claim. If an artifact cannot
