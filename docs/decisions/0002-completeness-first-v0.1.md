@@ -22,7 +22,7 @@ Support Node 22 and 24, refuse Node 20, and verify both supported majors in CI. 
 - The public scope is smaller and directly testable.
 - Missing or contradictory evidence fails closed; it is never converted into success.
 - Existing Phase 0 recommendation and release-decision code remains available in Git history, not in an archive directory or compatibility wrapper.
-- The open-source action may support a paid retained-history product only after the external validation gate returns `PROCEED`.
+- The open-source action may support paid retained-history design only after the external validation gate returns an independently chronology-verified `PROCEED`; implementation still requires a new reviewed specification and security/privacy model.
 - Playwright versions outside the behavior-tested range remain unsupported until the compatibility matrix passes.
 
 ## Supersedes

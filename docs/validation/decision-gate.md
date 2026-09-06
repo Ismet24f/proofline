@@ -140,8 +140,9 @@ At `evaluationAt`, rules execute once in this order:
    zero confirmed catches, an unresolved false positive exists, or every pilot
    team removed Proofline for low value. All-team low-value removal has
    precedence over every commercial measure.
-3. `PROCEED` if measures 1-8 all pass. This authorizes design of hosted history,
-   not implementation, revenue claims, or an OpenAI partnership.
+3. Candidate `PROCEED` if measures 1-8 all pass. Only after independent
+   chronology verification does it authorize design of hosted history, not
+   implementation, revenue claims, or an OpenAI partnership.
 4. `NARROW` if the top-three and catch thresholds pass, `PROCEED` is false, no
    stop condition applies, and at least four qualified interviews independently
    point to the same `W-...` alternative wedge.

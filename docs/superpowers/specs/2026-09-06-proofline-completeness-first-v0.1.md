@@ -574,7 +574,7 @@ The next independent review runs only after executable CI evidence exists (Phase
 13. Written implementation plan required, authoring time-boxed to 4 hours.
 14. 30 hours is a scope-review checkpoint; correctness is never cut.
 15. 30-day gate with disease-signal preflight and `INCONCLUSIVE` outcome.
-16. Hosted work waits for `PROCEED`.
+16. Hosted-history design waits for an independently chronology-verified `PROCEED`; hosted implementation remains unauthorized.
 
 ---
 
