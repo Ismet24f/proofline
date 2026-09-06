@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@playwright/test": "1.62.1",
-    "@proofline/playwright-reporter": "workspace:*"
+    "@playwright/test": "1.62.1"
   }
 }

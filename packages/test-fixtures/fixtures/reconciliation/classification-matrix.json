@@ -1,0 +1,27 @@
+{
+  "planned": [
+    { "id": "pass", "status": "expected", "attempts": ["passed"] },
+    { "id": "retry", "status": "flaky", "attempts": ["failed", "passed"] },
+    { "id": "failure", "status": "unexpected", "attempts": ["failed"] },
+    { "id": "runtime-skip", "status": "skipped", "attempts": ["skipped"] },
+    { "id": "interrupted", "status": "skipped", "attempts": ["interrupted"] },
+    { "id": "absent", "status": "expected", "attempts": ["passed"] },
+    {
+      "id": "disabled",
+      "status": "skipped",
+      "attempts": [],
+      "expectedStatus": "skipped"
+    }
+  ],
+  "observed": [
+    { "id": "pass", "status": "expected", "attempts": ["passed"] },
+    { "id": "retry", "status": "flaky", "attempts": ["failed", "passed"] },
+    { "id": "failure", "status": "unexpected", "attempts": ["failed"] },
+    { "id": "runtime-skip", "status": "skipped", "attempts": ["skipped"] },
+    { "id": "interrupted", "status": "skipped", "attempts": ["interrupted"] },
+    { "id": "unexpected", "status": "expected", "attempts": ["passed"] }
+  ],
+  "missingProducerPlanned": [
+    { "id": "api-contract", "status": "expected", "attempts": ["passed"] }
+  ]
+}

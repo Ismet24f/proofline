@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "windowStart": "",
+  "windowEnd": "",
+  "evaluationAt": "",
+  "validationOwnerAlias": "",
+  "interviewIds": [],
+  "repositories": [],
+  "thresholds": {
+    "completedQualifiedInterviews": 8,
+    "topThreeProblem": 4,
+    "pilotRepositories": 3,
+    "observedPullRequests": 60,
+    "confirmedCatches": 3,
+    "catchTeams": 2,
+    "unresolvedFalsePositives": 0,
+    "retainedTeams": 1,
+    "budgetProbes": 1
+  }
+}

@@ -1,0 +1,95 @@
+# Copy to .github/workflows/proofline.yml and make the `proofline` reconcile job
+# a required status check. Proofline reports completeness; it does not replace
+# the Playwright test job as a required check.
+#
+# Third-party actions verified 2026-09-06:
+# - actions/checkout v7.0.1 -> 3d3c42e5aac5ba805825da76410c181273ba90b1
+# - actions/setup-node v7.0.0 -> 820762786026740c76f36085b0efc47a31fe5020
+# - pnpm/action-setup v6.1.0 -> ea17c68df8912ef543352723c149a84f56e3d413
+# - actions/upload-artifact v7.0.1 -> 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+# - actions/download-artifact v8.0.1 -> 3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+
+name: Playwright with Proofline
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - name: Plan Playwright tests
+        uses: Ismet24f/proofline/check@v0.1.0
+        with:
+          operation: plan
+          producer: e2e
+          shard: ${{ matrix.shard }}/3
+          out: proofline/e2e-${{ matrix.shard }}-of-3/plan.json
+          playwright-args: |
+            --project=chromium
+
+      - name: Run Playwright tests
+        run: >-
+          pnpm exec playwright test
+          --project=chromium
+          --shard=${{ matrix.shard }}/3
+          --reporter=line,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: proofline/e2e-${{ matrix.shard }}-of-3/report.json
+
+      - name: Collect execution evidence
+        if: always()
+        uses: Ismet24f/proofline/check@v0.1.0
+        with:
+          operation: collect
+          producer: e2e
+          shard: ${{ matrix.shard }}/3
+          plan: proofline/e2e-${{ matrix.shard }}-of-3/plan.json
+          report: proofline/e2e-${{ matrix.shard }}-of-3/report.json
+          out: proofline/e2e-${{ matrix.shard }}-of-3/envelope.json
+
+      - name: Upload Proofline evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: proofline-e2e-${{ matrix.shard }}
+          path: proofline/
+          retention-days: 14
+          if-no-files-found: warn
+
+  proofline:
+    name: Proofline completeness
+    needs: [e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download Proofline evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: proofline-*
+          path: artifacts
+          merge-multiple: true
+      - name: Reconcile planned and observed evidence
+        uses: Ismet24f/proofline/check@v0.1.0
+        with:
+          operation: reconcile
+          producers: e2e=3
+          artifacts: artifacts
+          mode: enforce-evidence
