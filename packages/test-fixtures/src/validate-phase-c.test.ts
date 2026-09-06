@@ -147,7 +147,7 @@ afterEach(() => {
 });
 
 describe('validate-phase-c', () => {
-  it('reports the public draft contracts as observing', () => {
+  it('reports the current public contracts as observing', () => {
     const output = execFileSync(process.execPath, [SCRIPT], {
       cwd: REPOSITORY_ROOT,
       encoding: 'utf8',
@@ -156,9 +156,9 @@ describe('validate-phase-c', () => {
       schemaVersion: 1,
       outcome: 'PHASE_C_OBSERVING',
       counts: {
-        distinctPullRequests: 0,
-        qualifyingPullRequests: 0,
-        matchedObservations: 0,
+        distinctPullRequests: 1,
+        qualifyingPullRequests: 1,
+        matchedObservations: 1,
         resolvedMismatchObservations: 0,
         unresolvedMismatchObservations: 0,
         toolErrorObservations: 0,

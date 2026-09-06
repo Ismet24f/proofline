@@ -1,1 +1,2 @@
 observation_id,repository_alias,pr_alias,observed_at,proofline_commit,playwright_version,mode,proofline_status,proofline_records,raw_records_checked,cross_check_result,false_classification_count,resolved_at,evidence_ref,resolution_evidence_ref
+OBS-000001,R-000001,PR-000001,2026-09-06T16:00:48.666Z,18e81aafe06b18a7e9d334af5056b9523df6d5cb,1.62.1,report-only,complete,6,6,matched,0,,E-000001,
