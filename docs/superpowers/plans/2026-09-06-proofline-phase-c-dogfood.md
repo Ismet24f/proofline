@@ -174,7 +174,7 @@ git commit -m "docs: start Phase C dogfood"
 
 - Produces a reviewable Phase C foundation; it does not produce a release.
 
-- [ ] **Step 1: Run supported-runtime gates**
+- [x] **Step 1: Run supported-runtime gates**
 
 ```bash
 # Node 22
@@ -188,7 +188,7 @@ pnpm --filter @proofline/check bundle:check
 
 Expected: every command passes with cache bypass for the full task graph.
 
-- [ ] **Step 2: Validate repository state**
+- [x] **Step 2: Validate repository state**
 
 ```bash
 git diff --check origin/main...HEAD
