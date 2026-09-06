@@ -3,14 +3,14 @@ export interface PlaywrightProject {
 }
 
 export interface PlaywrightResult {
-  status: string;
+  status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
 }
 
 export interface PlaywrightTest {
-  expectedStatus: string;
+  expectedStatus: 'passed' | 'failed' | 'skipped' | 'timedOut' | 'interrupted';
   projectName: string;
   results: readonly PlaywrightResult[];
-  status: string;
+  status: 'expected' | 'unexpected' | 'flaky' | 'skipped';
 }
 
 export interface PlaywrightSpec {
@@ -61,6 +61,27 @@ function string(value: unknown, path: string): string {
   return value;
 }
 
+function projectName(value: unknown, path: string): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${path} must be a string`);
+  }
+  if (value === '<default>') {
+    throw new Error(`${path} uses reserved project name <default>`);
+  }
+  return value;
+}
+
+function enumValue<const T extends readonly string[]>(
+  value: unknown,
+  allowed: T,
+  path: string,
+): T[number] {
+  if (typeof value !== 'string' || !allowed.includes(value)) {
+    throw new Error(`${path} has unsupported status: ${String(value)}`);
+  }
+  return value;
+}
+
 function positiveInteger(value: unknown, path: string): number {
   if (!Number.isInteger(value) || typeof value !== 'number' || value < 1) {
     throw new Error(`${path} must be a positive integer`);
@@ -70,18 +91,32 @@ function positiveInteger(value: unknown, path: string): number {
 
 function parseResult(value: unknown, path: string): PlaywrightResult {
   const input = record(value, path);
-  return { status: string(input.status, `${path}.status`) };
+  return {
+    status: enumValue(
+      input.status,
+      ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'] as const,
+      `${path}.status`,
+    ),
+  };
 }
 
 function parseTest(value: unknown, path: string): PlaywrightTest {
   const input = record(value, path);
   return {
-    expectedStatus: string(input.expectedStatus, `${path}.expectedStatus`),
-    projectName: string(input.projectName, `${path}.projectName`),
+    expectedStatus: enumValue(
+      input.expectedStatus,
+      ['passed', 'failed', 'skipped', 'timedOut', 'interrupted'] as const,
+      `${path}.expectedStatus`,
+    ),
+    projectName: projectName(input.projectName, `${path}.projectName`),
     results: array(input.results, `${path}.results`).map((result, index) =>
       parseResult(result, `${path}.results[${String(index)}]`),
     ),
-    status: string(input.status, `${path}.status`),
+    status: enumValue(
+      input.status,
+      ['expected', 'unexpected', 'flaky', 'skipped'] as const,
+      `${path}.status`,
+    ),
   };
 }
 
@@ -117,7 +152,7 @@ function parseSuite(value: unknown, path: string): PlaywrightSuite {
 }
 
 function parseShard(value: unknown): { current: number; total: number } | null {
-  if (value === null || value === undefined) {
+  if (value === null) {
     return null;
   }
   const input = record(value, 'config.shard');
@@ -132,6 +167,15 @@ function parseShard(value: unknown): { current: number; total: number } | null {
 export function parsePlaywrightJson(input: unknown): PlaywrightJsonReport {
   const report = record(input, 'report');
   const config = record(report.config, 'config');
+  if (!Object.hasOwn(config, 'shard')) {
+    throw new Error('config.shard is required');
+  }
+  const version = string(config.version, 'config.version');
+  if (!/^1\.62\.\d+$/u.test(version)) {
+    throw new Error(
+      `unsupported Playwright version: ${version}; expected 1.62.x`,
+    );
+  }
   return {
     config: {
       argv: array(config.argv, 'config.argv').map((argument, index) =>
@@ -141,14 +185,14 @@ export function parsePlaywrightJson(input: unknown): PlaywrightJsonReport {
       rootDir: string(config.rootDir, 'config.rootDir'),
       projects: array(config.projects, 'config.projects').map(
         (project, index) => ({
-          name: string(
+          name: projectName(
             record(project, `config.projects[${String(index)}]`).name,
             `config.projects[${String(index)}].name`,
           ),
         }),
       ),
       shard: parseShard(config.shard),
-      version: string(config.version, 'config.version'),
+      version,
     },
     suites: array(report.suites, 'report.suites').map((suite, index) =>
       parseSuite(suite, `report.suites[${String(index)}]`),

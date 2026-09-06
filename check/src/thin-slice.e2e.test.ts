@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -122,6 +130,10 @@ async function runSlice(options: { scenario: Scenario }): Promise<unknown> {
   const workspace = await mkdtemp(join(checkRoot, '.tmp-thin-slice-'));
   temporaryDirectories.push(workspace);
   await cp(fixtureSource, workspace, { recursive: true });
+  await symlink(
+    join(checkRoot, 'node_modules'),
+    join(workspace, 'node_modules'),
+  );
 
   const env = {
     ...process.env,
@@ -138,7 +150,7 @@ async function runSlice(options: { scenario: Scenario }): Promise<unknown> {
     'runtime-skipped': 'runtime skips$',
     'retry-masked': 'passes after retry$',
     'selection-mismatch': 'passes$',
-    'active-disabled': '(passes$|is statically disabled$)',
+    'active-disabled': '(passes$|disabled$)',
   };
   const grep = grepByScenario[options.scenario];
   const playwrightArguments = `--project=chromium\n--grep=${grep}`;

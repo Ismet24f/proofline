@@ -36,7 +36,9 @@ export function buildSelectionDescriptor(
     playwrightVersion: report.config.version,
     shard: reportShard,
     cli: normalizeSelectionArgv(commandArguments(report.config.argv)),
-    configuredProjects: report.config.projects.map((project) => project.name),
+    configuredProjects: report.config.projects.map((project) =>
+      project.name === '' ? '<default>' : project.name,
+    ),
   };
 }
 

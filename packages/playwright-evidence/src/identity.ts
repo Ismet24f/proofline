@@ -17,6 +17,11 @@ export interface NormalizedPlaywrightTest {
   observed: PlaywrightTest;
 }
 
+export interface IdentityContext {
+  rootDir: string;
+  suitePath: readonly string[];
+}
+
 function relativeTestFile(rootDir: string, file: string): string {
   const absoluteFile = isAbsolute(file) ? file : resolve(rootDir, file);
   const result = relative(rootDir, absoluteFile);
@@ -26,17 +31,25 @@ function relativeTestFile(rootDir: string, file: string): string {
   return result.split(sep).join('/');
 }
 
-function expectedStatus(value: string): PlannedExpectedStatus {
-  if (
-    value === 'passed' ||
-    value === 'failed' ||
-    value === 'skipped' ||
-    value === 'timedOut' ||
-    value === 'interrupted'
-  ) {
-    return value;
-  }
-  throw new Error(`unsupported Playwright expectedStatus: ${value}`);
+function normalizedProjectName(value: string): string {
+  return value === '' ? '<default>' : value;
+}
+
+export function makeIdentity(
+  spec: PlaywrightSpec,
+  test: PlaywrightTest,
+  context: IdentityContext,
+): TestIdentity {
+  const projectName = normalizedProjectName(test.projectName);
+  return {
+    key: JSON.stringify([projectName, spec.id]),
+    projectName,
+    playwrightTestId: spec.id,
+    file: relativeTestFile(context.rootDir, spec.file),
+    line: spec.line,
+    column: spec.column,
+    titlePath: [...context.suitePath, spec.title],
+  };
 }
 
 function normalizeSpec(
@@ -45,16 +58,11 @@ function normalizeSpec(
   suitePath: readonly string[],
 ): NormalizedPlaywrightTest[] {
   return spec.tests.map((test) => ({
-    identity: {
-      key: JSON.stringify([test.projectName, spec.id]),
-      projectName: test.projectName,
-      playwrightTestId: spec.id,
-      file: relativeTestFile(report.config.rootDir, spec.file),
-      line: spec.line,
-      column: spec.column,
-      titlePath: [...suitePath, spec.title],
-    },
-    expectedStatus: expectedStatus(test.expectedStatus),
+    identity: makeIdentity(spec, test, {
+      rootDir: report.config.rootDir,
+      suitePath,
+    }),
+    expectedStatus: test.expectedStatus satisfies PlannedExpectedStatus,
     observed: test,
   }));
 }
@@ -77,7 +85,31 @@ export function flattenPlaywrightTests(
       stack.push({ suite, path: suitePath });
     }
   }
-  return normalized.sort((left, right) =>
+  normalized.sort((left, right) =>
     left.identity.key.localeCompare(right.identity.key),
   );
+  const collisions = new Map<string, NormalizedPlaywrightTest[]>();
+  for (const test of normalized) {
+    const matches = collisions.get(test.identity.key) ?? [];
+    matches.push(test);
+    collisions.set(test.identity.key, matches);
+  }
+  const duplicates = [...collisions.entries()].filter(
+    ([, matches]) => matches.length > 1,
+  );
+  if (duplicates.length > 0) {
+    const details = duplicates
+      .map(
+        ([key, matches]) =>
+          `${key}: ${matches
+            .map(
+              (match) =>
+                `${match.identity.file}:${String(match.identity.line)}:${String(match.identity.column)}`,
+            )
+            .join(', ')}`,
+      )
+      .join('; ');
+    throw new Error(`duplicate Playwright identity: ${details}`);
+  }
+  return normalized;
 }

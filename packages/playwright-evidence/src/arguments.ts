@@ -78,11 +78,8 @@ export function parseArgumentLines(input: string): string[] {
   return arguments_;
 }
 
-const normalizedValueArguments = new Map([
-  ...supportedValueArguments,
-  ['--config', '--config'],
-  ['--shard', '--shard'],
-]);
+const normalizedValueArguments = new Map([...supportedValueArguments]);
+const descriptorOwnedArguments = new Set(['--config', '--shard']);
 
 function readRequiredValue(
   argv: readonly string[],
@@ -110,6 +107,17 @@ export function normalizeSelectionArgv(argv: readonly string[]): string[] {
     }
     if (name === '--reporter') {
       if (argument === '--reporter') {
+        const { nextIndex } = readRequiredValue(argv, index, name);
+        index = nextIndex;
+      }
+      continue;
+    }
+    if (descriptorOwnedArguments.has(name)) {
+      if (argument.includes('=')) {
+        if (argument.endsWith('=')) {
+          throw new Error(`${name} requires a value`);
+        }
+      } else {
         const { nextIndex } = readRequiredValue(argv, index, name);
         index = nextIndex;
       }

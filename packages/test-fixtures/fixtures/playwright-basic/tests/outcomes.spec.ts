@@ -12,6 +12,16 @@ test('passes after retry', () => {
   expect(test.info().retry).toBe(1);
 });
 
-test.skip('is statically disabled', () => {
+test.skip('disabled', () => {
   expect(true).toBe(false);
 });
+
+test.fixme('fixme', () => {
+  expect(true).toBe(false);
+});
+
+for (const value of ['alpha', 'beta']) {
+  test(`parameterized ${value}`, () => {
+    expect(value.length).toBeGreaterThan(0);
+  });
+}
