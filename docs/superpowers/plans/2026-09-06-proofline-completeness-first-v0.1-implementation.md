@@ -150,7 +150,7 @@ Add this after `dist/` in `.gitignore`:
 
 - [ ] **Step 4: Replace stale product language**
 
-Rewrite `README.md` around the exact one-question contract, the honest rollup comparison, job-level skip boundary, fully-skipped-job naming limitation, Node 22/24, current source status, and Apache-2.0. Remove the manual metadata and unpublished reporter installation walkthrough. Do not include pricing, adoption, safety, or partnership claims.
+Rewrite `README.md` around the exact one-question contract, the honest rollup comparison, job-level skip boundary, fully-skipped-job naming limitation, Node 22/24, current source status, and Apache-2.0. Warn that CLI `--reporter=json` ignores a config-defined JSON reporter `outputFile` in Playwright 1.62.1, so `PLAYWRIGHT_JSON_OUTPUT_FILE` must match Proofline's report path. Remove the manual metadata and unpublished reporter installation walkthrough. Do not include pricing, adoption, safety, or partnership claims.
 
 Defer the matching public repository-description mutation until the completed branch is pushed in Task 9, so the public description never promises code that is not yet visible.
 
@@ -634,15 +634,18 @@ it.each([
   ['unexpected', ['timedOut'], 'passed', 'failed'],
   ['unexpected', ['passed'], 'failed', 'failed'],
   ['skipped', ['skipped'], 'passed', 'runtime_skipped'],
-  ['unexpected', ['interrupted'], 'passed', 'incomplete'],
-])('classifies %s %#', (outcome, attempts, plannedExpectedStatus, expected) => {
+  ['skipped', ['interrupted'], 'passed', 'incomplete'],
+])('classifies %s %#', (status, attempts, plannedExpectedStatus, expected) => {
   expect(
-    deriveObservedOutcome({ outcome, attempts, plannedExpectedStatus }),
+    deriveObservedOutcome(
+      { status, attempts, plannedExpectedStatus },
+      { reportInterrupted: attempts.includes('interrupted') },
+    ),
   ).toBe(expected);
 });
 ```
 
-Add a report-context test: when any result is `interrupted`, an active planned test with zero attempts is `incomplete`, not `absent`; an observed skipped result remains `runtime_skipped`. This conservative rule must not relabel a runtime skip that completed before SIGINT.
+Add an explicit trap assertion that the in-flight test has test-level `status: 'skipped'` and `results[].status: ['interrupted']`, yet `deriveObservedOutcome(test, reportContext)` returns `incomplete`. Add a report-context test: when any result is `interrupted`, an active planned test with zero attempts is `incomplete`, not `absent`; an observed skipped result remains `runtime_skipped`. This conservative rule must not relabel a runtime skip that completed before SIGINT.
 
 - [ ] **Step 3: Write drift and envelope tests**
 

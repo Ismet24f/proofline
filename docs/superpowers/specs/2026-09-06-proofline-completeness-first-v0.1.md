@@ -199,6 +199,8 @@ jobs:
           mode: report-only
 ```
 
+In Playwright 1.62.1, CLI `--reporter=json` writes to stdout and does not preserve a config-defined JSON reporter `outputFile`. Consumers must set `PLAYWRIGHT_JSON_OUTPUT_FILE` to the same path passed to Proofline, as above; relying only on a config-array `outputFile` is unsupported.
+
 The consumer's `npx playwright install`/`test` lines are theirs and may use `npx`; Proofline's own operations do not (§7.5).
 
 ### 6.2 What a fully skipped job can and cannot report
@@ -416,7 +418,7 @@ Unit tests for parsers and schemas are necessary and insufficient. Playwright be
 9. `test.fail()` failing as declared → `executed_as_expected`; `test.fail()` unexpectedly passing → `failed`.
 10. First-attempt pass vs retry pass → `executed_as_expected` vs `retry_masked`.
 11. Terminal failure and timeout → `failed`, never a completeness gap.
-12. `SIGINT` mid-run with partial report → the interrupted attempt and active planned tests with zero attempts are `incomplete`; already-observed runtime skips remain `runtime_skipped`; an unreadable/missing artifact is `no_evidence`.
+12. `SIGINT` mid-run with partial report → the interrupted attempt and active planned tests with zero attempts are `incomplete`; already-observed runtime skips remain `runtime_skipped`. `SIGINT` during Playwright compilation may produce no JSON; an unreadable/missing artifact is `no_evidence`.
 13. Unexpected and duplicate identities detected.
 14. Malformed, oversized, mismatched-revision, digest-invalid artifacts → tool error.
 15. Same inputs → deterministic record ordering and identities after excluding truthful timestamps and run-specific digests.
@@ -458,6 +460,7 @@ At **30 recorded hours** into A+B, hold a scope review. Permitted cuts, in order
 - 8 qualified interviews **booked** (Playwright + GitHub Actions + QA/release/EM role + external team).
 - 3 repository owners authorize `report-only` installation and name observable workflows.
 - **Disease-signal qualification:** each pilot repository has ≥1 of: conditional test jobs, matrix or shards, a skip that can occur during test execution, or `retries ≥ 1`. Workflow-level path filtering alone does not qualify because Proofline cannot evaluate a workflow that never starts.
+- Each pilot repository freezes its Playwright dependency to a tested 1.62.x lockfile for the observation window. A requested minor upgrade triggers the compatibility matrix as a same-day task; observations for that repository pause until it passes.
 - No production secrets or customer payloads enter the study.
 
 Preflight not met → keep recruiting; not evidence about the problem.
