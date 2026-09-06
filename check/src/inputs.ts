@@ -12,7 +12,7 @@ export interface ActionsPort {
   writeSummary(markdown: string): Promise<void>;
 }
 
-export type ActionInputs =
+export type ActionInputs = { workingDirectory: string } & (
   | {
       operation: 'plan';
       producer: ProducerRef;
@@ -36,7 +36,8 @@ export type ActionInputs =
       mode: ReconciliationMode;
       out: string;
       summary: boolean;
-    };
+    }
+);
 
 export function parseShard(input: string): ProducerRef['shard'] {
   const match = /^(\d+)\/(\d+)$/u.exec(input || '1/1');
@@ -99,10 +100,15 @@ function booleanInput(input: string, fallback: boolean): boolean {
 
 export function readActionInputs(port: ActionsPort): ActionInputs {
   const operation = port.getInput('operation', { required: true });
+  const workingDirectory = safePath(
+    port.getInput('working-directory') || '.',
+    'working-directory',
+  );
   if (operation === 'plan') {
     const config = optional(port, 'config');
     return {
       operation,
+      workingDirectory,
       producer: producerFrom(port),
       playwrightArguments: port.getInput('playwright-args'),
       ...(config === undefined ? {} : { config: safePath(config, 'config') }),
@@ -118,6 +124,7 @@ export function readActionInputs(port: ActionsPort): ActionInputs {
   if (operation === 'collect') {
     return {
       operation,
+      workingDirectory,
       producer: producerFrom(port),
       report: safePath(port.getInput('report', { required: true }), 'report'),
       plan: safePath(port.getInput('plan') || 'proofline/plan.json', 'plan'),
@@ -127,6 +134,7 @@ export function readActionInputs(port: ActionsPort): ActionInputs {
   if (operation === 'reconcile') {
     return {
       operation,
+      workingDirectory,
       producers: port.getInput('producers', { required: true }),
       artifacts: safePath(
         port.getInput('artifacts', { required: true }),

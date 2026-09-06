@@ -59,6 +59,32 @@ async function prepareWorkspace(
   return workspace;
 }
 
+async function prepareMonorepoWorkspace(): Promise<{
+  repositoryWorkspace: string;
+  appWorkspace: string;
+  workingDirectory: string;
+}> {
+  const repositoryWorkspace = await mkdtemp(
+    join(repositoryRoot, '.tmp-monorepo-'),
+  );
+  temporaryDirectories.push(repositoryWorkspace);
+  const workingDirectory = 'apps/web-e2e';
+  const appWorkspace = join(repositoryWorkspace, workingDirectory);
+  await mkdir(join(repositoryWorkspace, 'apps'), { recursive: true });
+  await cp(consumerFixtureSource, appWorkspace, { recursive: true });
+  await mkdir(join(appWorkspace, 'node_modules/@playwright'), {
+    recursive: true,
+  });
+  await symlink(
+    join(
+      repositoryRoot,
+      'packages/playwright-evidence/node_modules/@playwright/test',
+    ),
+    join(appWorkspace, 'node_modules/@playwright/test'),
+  );
+  return { repositoryWorkspace, appWorkspace, workingDirectory };
+}
+
 function githubEnvironment(workspace: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
@@ -708,5 +734,67 @@ describe('real Playwright evidence workflows', { timeout: 30_000 }, () => {
       status: 'complete',
       counts: { executedAsExpected: 1 },
     });
+  });
+
+  it('runs the bundled action from a package-scoped monorepo working directory', async () => {
+    const { repositoryWorkspace, appWorkspace, workingDirectory } =
+      await prepareMonorepoWorkspace();
+    const common = { 'working-directory': workingDirectory };
+    const plan = await runBundledAction(repositoryWorkspace, {
+      ...common,
+      operation: 'plan',
+      producer: 'e2e',
+      shard: '1/1',
+      'playwright-args': '--project=chromium',
+      config: 'playwright.config.ts',
+      repository,
+      revision,
+      out: 'proofline/plan.json',
+    });
+    expect(plan.code, plan.stderr || plan.stdout).toBe(0);
+
+    const execution = await runCommand({
+      cwd: appWorkspace,
+      command: process.execPath,
+      args: [
+        resolvePlaywrightCli(appWorkspace),
+        'test',
+        '--config=playwright.config.ts',
+        '--project=chromium',
+        '--reporter=line,json',
+      ],
+      env: {
+        ...githubEnvironment(repositoryWorkspace),
+        PLAYWRIGHT_JSON_OUTPUT_FILE: join(
+          appWorkspace,
+          'proofline/report.json',
+        ),
+      },
+    });
+    expect(execution.code, execution.stderr || execution.stdout).toBe(0);
+
+    const collect = await runBundledAction(repositoryWorkspace, {
+      ...common,
+      operation: 'collect',
+      producer: 'e2e',
+      shard: '1/1',
+      plan: 'proofline/plan.json',
+      report: 'proofline/report.json',
+      out: 'proofline/envelope.json',
+    });
+    expect(collect.code, collect.stderr || collect.stdout).toBe(0);
+    const reconcile = await runBundledAction(repositoryWorkspace, {
+      ...common,
+      operation: 'reconcile',
+      producers: 'e2e=1',
+      artifacts: 'proofline',
+      mode: 'report-only',
+      out: 'reconciliation.json',
+      summary: 'false',
+    });
+    expect(reconcile.code, reconcile.stderr || reconcile.stdout).toBe(0);
+    await expect(
+      readFile(join(appWorkspace, 'reconciliation.json'), 'utf8'),
+    ).resolves.toContain('"status": "complete"');
   });
 });

@@ -216,16 +216,22 @@ Because the plan runs inside the job, a job skipped by `if:` produces no fragmen
 
 One bundled JavaScript action at `Ismet24f/proofline/check` with three operations sharing schemas and identity code.
 
+All operations accept optional `working-directory` (default `.`). It is
+repository-relative, must resolve to a directory inside `GITHUB_WORKSPACE`, and
+defines the Playwright resolution/cwd plus the base for every other path input.
+This is the supported monorepo contract.
+
 ### 7.1 `plan`
 
-| Input                    | Required | Notes                         |
-| ------------------------ | -------- | ----------------------------- |
-| `producer`               | yes      | `[a-z0-9-]{1,32}`             |
-| `shard`                  | no       | `N/T`, default `1/1`          |
-| `playwright-args`        | no       | forwarded to list discovery   |
-| `config`                 | no       | forwarded as `--config`       |
-| `repository`, `revision` | no       | override §8.2                 |
-| `out`                    | no       | default `proofline/plan.json` |
+| Input                    | Required | Notes                                 |
+| ------------------------ | -------- | ------------------------------------- |
+| `working-directory`      | no       | default `.`, common to all operations |
+| `producer`               | yes      | `[a-z0-9-]{1,32}`                     |
+| `shard`                  | no       | `N/T`, default `1/1`                  |
+| `playwright-args`        | no       | forwarded to list discovery           |
+| `config`                 | no       | forwarded as `--config`               |
+| `repository`, `revision` | no       | override §8.2                         |
+| `out`                    | no       | default `proofline/plan.json`         |
 
 ### 7.2 `collect`
 
@@ -368,7 +374,7 @@ Then producer table (including, for `no_evidence` producers, the explicit senten
 ## 13. Security, privacy, portability
 
 - Reads only declared inputs; writes only `out` paths and the step summary. No network. No token. No `npx`; child processes spawned with `shell: false` (§7.5).
-- Repository-relative path inputs reject traversal. Existing inputs are resolved at access time and reject a resolved symlink escape outside `GITHUB_WORKSPACE`; artifact discovery does not follow symlinks. Concurrent filesystem replacement by another process is outside the v0.1 threat model.
+- `working-directory` rejects traversal and resolved symlink escape outside `GITHUB_WORKSPACE`. Other relative inputs are contained by that resolved directory; artifact discovery does not follow symlinks. Concurrent filesystem replacement by another process is outside the v0.1 threat model.
 - Artifact discovery bounds: depth 32, 4,096 directories, 20,000 entries, and 4,096 plan/envelope files. Aggregate distinct artifact JSON is capped at 512 MiB and read sequentially.
 - Per-file JSON parsing bounds: 50 MB file, depth 64, 1 MB strings, 200k records; exceeding → tool error naming the bound.
 - Errors name artifact + violated invariant; never print environment or full payloads.

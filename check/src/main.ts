@@ -5,6 +5,7 @@ import {
   createPlan,
   reconcileEvidence,
   renderGitHubSummary,
+  resolveInputDirectory,
 } from '@proofline/playwright-evidence';
 
 import {
@@ -20,6 +21,7 @@ export interface DomainOperations {
   collectEvidence: typeof collectEvidence;
   reconcileEvidence: typeof reconcileEvidence;
   renderGitHubSummary: typeof renderGitHubSummary;
+  resolveInputDirectory: typeof resolveInputDirectory;
 }
 
 export interface ActionRuntime {
@@ -33,6 +35,7 @@ const domainOperations: DomainOperations = {
   collectEvidence,
   reconcileEvidence,
   renderGitHubSummary,
+  resolveInputDirectory,
 };
 
 const processRuntime: ActionRuntime = {
@@ -86,7 +89,11 @@ async function dispatch(
   runtime: ActionRuntime,
 ): Promise<void> {
   const inputs = readActionInputs(port);
-  const workspace = requiredEnvironment(runtime, 'GITHUB_WORKSPACE');
+  const repositoryWorkspace = requiredEnvironment(runtime, 'GITHUB_WORKSPACE');
+  const workspace = await operations.resolveInputDirectory(
+    repositoryWorkspace,
+    inputs.workingDirectory,
+  );
   if (inputs.operation === 'plan') {
     const plan = await operations.createPlan({
       workspace,
@@ -144,7 +151,7 @@ function safeErrorMessage(error: unknown): string {
   if (error instanceof ProoflineToolError) return error.code;
   if (!(error instanceof Error)) return 'unknown Proofline error';
   if (
-    /^(Input required|unsupported operation|invalid |unsafe path|GITHUB_|Proofline requires)/u.test(
+    /^(Input required|unsupported operation|invalid |unsafe path|input is not a directory|input symlink escapes workspace|GITHUB_|Proofline requires)/u.test(
       error.message,
     )
   ) {

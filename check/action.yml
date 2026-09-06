@@ -6,6 +6,10 @@ inputs:
   operation:
     description: One of plan, collect, or reconcile.
     required: true
+  working-directory:
+    description: Repository-relative directory containing Playwright and its configuration; all other paths are relative to it.
+    required: false
+    default: .
   producer:
     description: Producer ID used by plan and collect.
     required: false
@@ -17,7 +21,7 @@ inputs:
     description: One argument per non-empty line; use --project=chromium, not --project chromium on one line.
     required: false
   config:
-    description: Repository-relative Playwright configuration path for plan.
+    description: Working-directory-relative Playwright configuration path for plan.
     required: false
   repository:
     description: Optional owner/repository override for plan.
@@ -26,24 +30,24 @@ inputs:
     description: Optional full lowercase 40-character revision override for plan.
     required: false
   report:
-    description: Repository-relative Playwright JSON report path for collect.
+    description: Working-directory-relative Playwright JSON report path for collect.
     required: false
   plan:
-    description: Repository-relative plan artifact path for collect.
+    description: Working-directory-relative plan artifact path for collect.
     required: false
     default: proofline/plan.json
   producers:
     description: Expected producer manifest such as e2e=3,api=1 for reconcile.
     required: false
   artifacts:
-    description: Repository-relative downloaded artifact directory for reconcile.
+    description: Working-directory-relative downloaded artifact directory for reconcile.
     required: false
   mode:
     description: Reconciliation mode, report-only or enforce-evidence.
     required: false
     default: report-only
   out:
-    description: Repository-relative output path; defaults depend on the operation.
+    description: Working-directory-relative output path; defaults depend on the operation.
     required: false
   summary:
     description: Write the reconciliation result to the GitHub step summary.

@@ -190,6 +190,17 @@ export async function resolveInputPath(
   return canonicalCandidate;
 }
 
+export async function resolveInputDirectory(
+  workspace: string,
+  input: string,
+): Promise<string> {
+  const path = await resolveInputPath(workspace, input);
+  if (!(await stat(path)).isDirectory()) {
+    throw new Error(`input is not a directory: ${input}`);
+  }
+  return path;
+}
+
 async function nearestExistingPath(candidate: string): Promise<string> {
   let current = candidate;
   while (current !== dirname(current)) {

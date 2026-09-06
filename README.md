@@ -14,6 +14,13 @@ The action runs entirely on the GitHub runner. Consumers do not install a Proofl
 
 The [consumer workflow](examples/consumer-workflow.yml) is the copy-paste integration reference. It plans each of three Playwright shards, collects evidence even after a test failure, uploads each shard independently, and reconciles all declared shards in one required job.
 
+For a monorepo whose Playwright package lives below the repository root, set
+`working-directory: apps/web-e2e` on every Proofline step and set the same
+directory on the Playwright `run` step. Proofline resolves Playwright from that
+package; `config`, `plan`, `report`, `artifacts`, and `out` are then relative to
+that directory. Upload `apps/web-e2e/proofline/` and download reconciliation
+artifacts beneath `apps/web-e2e/`.
+
 Configure both the Playwright job and `Proofline completeness` as required checks. The Playwright job answers whether tests passed; Proofline answers whether every planned test produced trustworthy evidence. Until `v0.1.0` is released, pin a reviewed Proofline commit rather than copying the prospective tag from the example.
 
 ## What v0.1 will report
@@ -53,7 +60,7 @@ pnpm turbo run lint typecheck build test --force
 
 The authoritative contracts are the [v0.1 specification](docs/superpowers/specs/2026-09-06-proofline-completeness-first-v0.1.md), [implementation plan](docs/superpowers/plans/2026-09-06-proofline-completeness-first-v0.1-implementation.md), and [ADR 0002](docs/decisions/0002-completeness-first-v0.1.md).
 
-The [roadmap and release checklist](docs/roadmap.md) keep technical readiness separate from demand. External validation uses one frozen [30-day decision gate](docs/validation/decision-gate.md) and two machine-checked, alias-only CSV contracts. No pilot clock has started, no external adoption is claimed, and the current market verdict is **promising, not proven**.
+The [roadmap and release checklist](docs/roadmap.md) keep technical readiness separate from demand. External validation uses one frozen [30-day decision gate](docs/validation/decision-gate.md), a freeze manifest, and normalized machine-checked alias-only ledgers. No pilot clock has started, no external adoption is claimed, and the current market verdict is **promising, not proven**.
 
 ## License
 

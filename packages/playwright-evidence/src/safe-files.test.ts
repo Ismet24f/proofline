@@ -20,6 +20,7 @@ import {
   DEFAULT_JSON_LIMITS,
   discoverArtifacts,
   readBoundedJson,
+  resolveInputDirectory,
   resolveInputPath,
   resolveOutputPath,
   sha256File,
@@ -52,6 +53,19 @@ describe('safe workspace paths', () => {
 
     await expect(resolveInputPath(workspace, 'report.json')).resolves.toBe(
       await realpath(input),
+    );
+  });
+
+  it('resolves only an existing in-workspace working directory', async () => {
+    const workspace = await temporaryDirectory();
+    await mkdir(join(workspace, 'apps/web'), { recursive: true });
+    await writeFile(join(workspace, 'file.txt'), 'not a directory');
+
+    await expect(resolveInputDirectory(workspace, 'apps/web')).resolves.toBe(
+      await realpath(join(workspace, 'apps/web')),
+    );
+    await expect(resolveInputDirectory(workspace, 'file.txt')).rejects.toThrow(
+      'input is not a directory',
     );
   });
 

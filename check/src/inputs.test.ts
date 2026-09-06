@@ -35,6 +35,7 @@ describe('readActionInputs', () => {
 
     expect(readActionInputs(port)).toEqual({
       operation: 'plan',
+      workingDirectory: '.',
       producer: { id: 'e2e', shard: { current: 1, total: 1 } },
       playwrightArguments: '--project=chromium\n--grep=checkout',
       out: 'proofline/plan.json',
@@ -73,6 +74,7 @@ describe('readActionInputs', () => {
       ),
     ).toEqual({
       operation: 'reconcile',
+      workingDirectory: '.',
       producers: 'e2e=2',
       artifacts: 'artifacts',
       mode: 'report-only',
@@ -115,10 +117,30 @@ describe('readActionInputs', () => {
         artifacts: '../../artifacts',
       },
     ],
+    [
+      'working-directory',
+      {
+        operation: 'plan',
+        producer: 'e2e',
+        'working-directory': '../outside',
+      },
+    ],
   ])('rejects unsafe %s paths', (_operation, values) => {
     expect(() => readActionInputs(new InputPort(values))).toThrow(
       'unsafe path',
     );
+  });
+
+  it('preserves a safe monorepo working directory', () => {
+    expect(
+      readActionInputs(
+        new InputPort({
+          operation: 'plan',
+          producer: 'e2e',
+          'working-directory': 'apps/web-e2e',
+        }),
+      ),
+    ).toMatchObject({ workingDirectory: 'apps/web-e2e' });
   });
 
   it('rejects invalid producer IDs before domain work', () => {

@@ -154,6 +154,7 @@ function harness(result = reconciliation(0)) {
     collectEvidence: vi.fn(() => Promise.resolve(envelope())),
     reconcileEvidence: vi.fn(() => Promise.resolve(result)),
     renderGitHubSummary: vi.fn(() => 'rendered summary'),
+    resolveInputDirectory: vi.fn(() => Promise.resolve('/workspace')),
   };
   const exitCodes: number[] = [];
   const runtime: ActionRuntime = {
