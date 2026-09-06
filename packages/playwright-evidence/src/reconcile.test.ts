@@ -414,6 +414,25 @@ describe('reconcileEvidence', () => {
     });
   });
 
+  it('returns the exact breached artifact traversal bound as a tool error', async () => {
+    const setup = await setupMatrix();
+    let directory = join(setup.workspace, 'artifacts');
+    for (let depth = 0; depth < 33; depth += 1) {
+      directory = join(directory, `depth-${String(depth)}`);
+    }
+    await mkdir(directory, { recursive: true });
+
+    const report = await reconcileEvidence(setup.options);
+    expect(report).toMatchObject({
+      status: 'tool_error',
+      counts: { toolErrors: 1 },
+      exitDecision: {
+        code: 2,
+        reasonCodes: ['artifact_depth_limit_exceeded'],
+      },
+    });
+  });
+
   it('does not downgrade a report digest contradiction to no_evidence', async () => {
     const setup = await setupMatrix();
     await writeFile(

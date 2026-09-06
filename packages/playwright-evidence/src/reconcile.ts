@@ -1,5 +1,5 @@
-import { readdir, realpath } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import {
   parsePlanArtifact,
@@ -20,6 +20,9 @@ import { deriveObservedOutcome } from './outcomes.js';
 import { computePlanDigest } from './plan.js';
 import { parsePlaywrightJson } from './playwright-json.js';
 import {
+  ArtifactByteBudget,
+  ArtifactLimitError,
+  discoverArtifacts,
   readBoundedJson,
   resolveInputPath,
   resolveOutputPath,
@@ -39,21 +42,6 @@ class ReconciliationToolError extends Error {
   ) {
     super(scopeKey === undefined ? code : `${code}: ${scopeKey}`);
   }
-}
-
-async function findNamedFiles(root: string, name: string): Promise<string[]> {
-  const matches: string[] = [];
-  const directories = [root];
-  while (directories.length > 0) {
-    const directory = directories.pop();
-    if (directory === undefined) break;
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) directories.push(path);
-      else if (entry.isFile() && basename(path) === name) matches.push(path);
-    }
-  }
-  return matches.sort((left, right) => left.localeCompare(right));
 }
 
 function emptyCounts() {
@@ -203,23 +191,26 @@ async function reconcileValidArtifacts(
     canonicalWorkspace,
     options.artifacts,
   );
-  const [planFiles, envelopeFiles] = await Promise.all([
-    findNamedFiles(artifacts, 'plan.json'),
-    findNamedFiles(artifacts, 'envelope.json'),
-  ]);
-  const plans = await Promise.all(
-    planFiles.map(async (path) => {
-      const value = parsePlanArtifact(await readBoundedJson(path));
-      verifyPlanDigest(value);
-      return { path, value };
-    }),
-  );
-  const envelopes: LoadedEnvelope[] = await Promise.all(
-    envelopeFiles.map(async (path) => ({
+  const { plans: planFiles, envelopes: envelopeFiles } =
+    await discoverArtifacts(artifacts);
+  const byteBudget = new ArtifactByteBudget();
+  const plans = [];
+  for (const discoveredPath of planFiles) {
+    const path = await resolveInputPath(canonicalWorkspace, discoveredPath);
+    await byteBudget.reserve(path);
+    const value = parsePlanArtifact(await readBoundedJson(path));
+    verifyPlanDigest(value);
+    plans.push({ path, value });
+  }
+  const envelopes: LoadedEnvelope[] = [];
+  for (const discoveredPath of envelopeFiles) {
+    const path = await resolveInputPath(canonicalWorkspace, discoveredPath);
+    await byteBudget.reserve(path);
+    envelopes.push({
       path,
       value: parseResultEnvelope(await readBoundedJson(path)),
-    })),
-  );
+    });
+  }
   const duplicatePlan = duplicateKey(plans, (plan) => plan.value.producer);
   if (duplicatePlan !== undefined) {
     throw new ReconciliationToolError('duplicate_plan', duplicatePlan);
@@ -283,8 +274,16 @@ async function reconcileValidArtifacts(
       throw new ReconciliationToolError('artifact_identity_mismatch', key);
     }
     if (envelope === undefined) {
-      const conventionalReport = join(dirname(planEntry.path), 'report.json');
+      const conventionalReportInput = join(
+        dirname(planEntry.path),
+        'report.json',
+      );
       try {
+        const conventionalReport = await resolveInputPath(
+          canonicalWorkspace,
+          conventionalReportInput,
+        );
+        await byteBudget.reserve(conventionalReport);
         const report = parsePlaywrightJson(
           await readBoundedJson(conventionalReport),
         );
@@ -337,6 +336,7 @@ async function reconcileValidArtifacts(
       canonicalWorkspace,
       join(dirname(envelope.path), envelope.value.reportPath),
     );
+    await byteBudget.reserve(reportPath);
     if ((await sha256File(reportPath)) !== envelope.value.reportDigest) {
       throw new ReconciliationToolError('report_digest_mismatch', key);
     }
@@ -473,7 +473,9 @@ export async function reconcileEvidence(
     const code =
       error instanceof ReconciliationToolError
         ? error.code
-        : 'artifact_invalid';
+        : error instanceof ArtifactLimitError
+          ? error.code
+          : 'artifact_invalid';
     const scopeKey =
       error instanceof ReconciliationToolError ? error.scopeKey : undefined;
     result = diagnosticReport(options, manifest, code, scopeKey);

@@ -365,8 +365,9 @@ Then producer table (including, for `no_evidence` producers, the explicit senten
 ## 13. Security, privacy, portability
 
 - Reads only declared inputs; writes only `out` paths and the step summary. No network. No token. No `npx`; child processes spawned with `shell: false` (§7.5).
-- Path inputs reject traversal and symlink escape outside `GITHUB_WORKSPACE`.
-- JSON parsing bounds: 50 MB file, depth 64, 1 MB strings, 200k records; exceeding → tool error naming the bound.
+- Repository-relative path inputs reject traversal. Existing inputs are resolved at access time and reject a resolved symlink escape outside `GITHUB_WORKSPACE`; artifact discovery does not follow symlinks. Concurrent filesystem replacement by another process is outside the v0.1 threat model.
+- Artifact discovery bounds: depth 32, 4,096 directories, 20,000 entries, and 4,096 plan/envelope files. Aggregate distinct artifact JSON is capped at 512 MiB and read sequentially.
+- Per-file JSON parsing bounds: 50 MB file, depth 64, 1 MB strings, 200k records; exceeding → tool error naming the bound.
 - Errors name artifact + violated invariant; never print environment or full payloads.
 - Consumer permissions: `contents: read`.
 - Test titles/paths may be sensitive; documentation recommends `retention-days`; nothing leaves the runner.

@@ -15,7 +15,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  ArtifactByteBudget,
+  ArtifactLimitError,
   DEFAULT_JSON_LIMITS,
+  discoverArtifacts,
   readBoundedJson,
   resolveInputPath,
   resolveOutputPath,
@@ -157,6 +160,64 @@ describe('readBoundedJson', () => {
 
     await expect(readBoundedJson(path, DEFAULT_JSON_LIMITS)).rejects.toThrow(
       'JSON record count exceeds 200000',
+    );
+  });
+});
+
+describe('bounded artifact discovery', () => {
+  it('finds only regular plan and envelope files without following symlinks', async () => {
+    const root = await temporaryDirectory();
+    const nested = join(root, 'nested');
+    const outside = await temporaryDirectory('proofline-outside-');
+    await mkdir(nested);
+    await writeFile(join(nested, 'plan.json'), '{}');
+    await writeFile(join(nested, 'envelope.json'), '{}');
+    await writeFile(join(nested, 'report.json'), '{}');
+    await writeFile(join(outside, 'plan.json'), '{}');
+    await symlink(outside, join(root, 'linked'));
+
+    await expect(discoverArtifacts(root)).resolves.toEqual({
+      plans: [join(nested, 'plan.json')],
+      envelopes: [join(nested, 'envelope.json')],
+    });
+  });
+
+  it.each([
+    ['artifact_depth_limit_exceeded', { maxDepth: 0 }],
+    ['artifact_directory_limit_exceeded', { maxDirectories: 1 }],
+    ['artifact_entry_limit_exceeded', { maxEntries: 1 }],
+    ['artifact_file_limit_exceeded', { maxArtifactFiles: 1 }],
+  ])('enforces %s', async (code, override) => {
+    const root = await temporaryDirectory();
+    const nested = join(root, 'nested');
+    await mkdir(nested);
+    await writeFile(join(root, 'plan.json'), '{}');
+    await writeFile(join(root, 'envelope.json'), '{}');
+
+    await expect(
+      discoverArtifacts(root, {
+        maxDepth: 2,
+        maxDirectories: 2,
+        maxEntries: 3,
+        maxArtifactFiles: 2,
+        maxAggregateBytes: 10,
+        ...override,
+      }),
+    ).rejects.toEqual(new ArtifactLimitError(code));
+  });
+
+  it('counts each canonical artifact once against the aggregate byte budget', async () => {
+    const root = await temporaryDirectory();
+    const first = join(root, 'first.json');
+    const second = join(root, 'second.json');
+    await writeFile(first, '12345');
+    await writeFile(second, '123456');
+    const budget = new ArtifactByteBudget(10);
+
+    await budget.reserve(first);
+    await budget.reserve(first);
+    await expect(budget.reserve(second)).rejects.toEqual(
+      new ArtifactLimitError('artifact_byte_limit_exceeded'),
     );
   });
 });

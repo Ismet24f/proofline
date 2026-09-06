@@ -5,12 +5,20 @@ import {
   mkdir,
   open,
   readFile,
+  readdir,
   realpath,
   rename,
   rm,
   stat,
 } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from 'node:path';
 
 export interface JsonLimits {
   maxFileBytes: number;
@@ -25,6 +33,121 @@ export const DEFAULT_JSON_LIMITS: Readonly<JsonLimits> = Object.freeze({
   maxStringBytes: 1024 * 1024,
   maxRecords: 200_000,
 });
+
+export interface ArtifactLimits {
+  maxDepth: number;
+  maxDirectories: number;
+  maxEntries: number;
+  maxArtifactFiles: number;
+  maxAggregateBytes: number;
+}
+
+export const DEFAULT_ARTIFACT_LIMITS: Readonly<ArtifactLimits> = Object.freeze({
+  maxDepth: 32,
+  maxDirectories: 4_096,
+  maxEntries: 20_000,
+  maxArtifactFiles: 4_096,
+  maxAggregateBytes: 512 * 1024 * 1024,
+});
+
+export class ArtifactLimitError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = 'ArtifactLimitError';
+  }
+}
+
+export interface DiscoveredArtifacts {
+  plans: string[];
+  envelopes: string[];
+}
+
+function validateArtifactLimits(limits: ArtifactLimits): void {
+  if (!Number.isSafeInteger(limits.maxDepth) || limits.maxDepth < 0) {
+    throw new Error('maxDepth must be a non-negative safe integer');
+  }
+  validateLimits({
+    maxDirectories: limits.maxDirectories,
+    maxEntries: limits.maxEntries,
+    maxArtifactFiles: limits.maxArtifactFiles,
+    maxAggregateBytes: limits.maxAggregateBytes,
+  });
+}
+
+export async function discoverArtifacts(
+  root: string,
+  limits: ArtifactLimits = DEFAULT_ARTIFACT_LIMITS,
+): Promise<DiscoveredArtifacts> {
+  validateArtifactLimits(limits);
+  const discovered: DiscoveredArtifacts = { plans: [], envelopes: [] };
+  const directories = [{ path: root, depth: 0 }];
+  let directoryCount = 0;
+  let entryCount = 0;
+  let artifactCount = 0;
+
+  while (directories.length > 0) {
+    const directory = directories.pop();
+    if (directory === undefined) break;
+    directoryCount += 1;
+    if (directoryCount > limits.maxDirectories) {
+      throw new ArtifactLimitError('artifact_directory_limit_exceeded');
+    }
+    for (const entry of await readdir(directory.path, {
+      withFileTypes: true,
+    })) {
+      entryCount += 1;
+      if (entryCount > limits.maxEntries) {
+        throw new ArtifactLimitError('artifact_entry_limit_exceeded');
+      }
+      const path = join(directory.path, entry.name);
+      if (entry.isDirectory()) {
+        const depth = directory.depth + 1;
+        if (depth > limits.maxDepth) {
+          throw new ArtifactLimitError('artifact_depth_limit_exceeded');
+        }
+        directories.push({ path, depth });
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const name = basename(path);
+      if (name !== 'plan.json' && name !== 'envelope.json') continue;
+      artifactCount += 1;
+      if (artifactCount > limits.maxArtifactFiles) {
+        throw new ArtifactLimitError('artifact_file_limit_exceeded');
+      }
+      (name === 'plan.json' ? discovered.plans : discovered.envelopes).push(
+        path,
+      );
+    }
+  }
+
+  discovered.plans.sort((left, right) => left.localeCompare(right));
+  discovered.envelopes.sort((left, right) => left.localeCompare(right));
+  return discovered;
+}
+
+export class ArtifactByteBudget {
+  readonly #seen = new Set<string>();
+  #consumed = 0;
+
+  constructor(
+    readonly maxBytes: number = DEFAULT_ARTIFACT_LIMITS.maxAggregateBytes,
+  ) {
+    validateLimits({ maxBytes });
+  }
+
+  async reserve(path: string): Promise<void> {
+    const canonicalPath = await realpath(path);
+    if (this.#seen.has(canonicalPath)) return;
+    const file = await stat(canonicalPath);
+    const next = this.#consumed + file.size;
+    if (next > this.maxBytes) {
+      throw new ArtifactLimitError('artifact_byte_limit_exceeded');
+    }
+    this.#seen.add(canonicalPath);
+    this.#consumed = next;
+  }
+}
 
 const stringifyJson = JSON.stringify as (
   value: unknown,
@@ -107,9 +230,13 @@ export async function resolveOutputPath(
   return candidate;
 }
 
-function validateLimits(limits: JsonLimits): void {
+function validateLimits(limits: object): void {
   for (const [name, value] of Object.entries(limits)) {
-    if (!Number.isSafeInteger(value) || value < 1) {
+    if (
+      typeof value !== 'number' ||
+      !Number.isSafeInteger(value) ||
+      value < 1
+    ) {
       throw new Error(`${name} must be a positive safe integer`);
     }
   }

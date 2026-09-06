@@ -81,6 +81,37 @@ describe('resolvePlaywrightCli', () => {
 });
 
 describe('createPlan', () => {
+  it('rejects an explicit config symlink that resolves outside the workspace', async () => {
+    const workspace = await mkdtemp(join(checkRoot, '.tmp-plan-config-'));
+    const outside = await mkdtemp(join(tmpdir(), 'proofline-config-outside-'));
+    temporaryDirectories.push(workspace, outside);
+    await symlink(
+      join(checkRoot, 'node_modules'),
+      join(workspace, 'node_modules'),
+    );
+    await writeFile(
+      join(outside, 'playwright.config.ts'),
+      'export default {};',
+    );
+    await symlink(
+      join(outside, 'playwright.config.ts'),
+      join(workspace, 'playwright.config.ts'),
+    );
+
+    await expect(
+      createPlan({
+        workspace,
+        producer: { id: 'e2e', shard: { current: 1, total: 1 } },
+        playwrightArguments: '',
+        config: 'playwright.config.ts',
+        repository: 'acme/checkout',
+        revision,
+        env: process.env,
+        out: 'proofline/plan.json',
+      }),
+    ).rejects.toThrow('input symlink escapes workspace');
+  });
+
   it('does not fall back to a package manager when local Playwright is absent', async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'proofline-no-playwright-'));
     temporaryDirectories.push(workspace);

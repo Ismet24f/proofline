@@ -17,6 +17,7 @@ import { resolveRepositoryContext } from './metadata.js';
 import { parsePlaywrightJson } from './playwright-json.js';
 import {
   readBoundedJson,
+  resolveInputPath,
   resolveOutputPath,
   writeJsonAtomically,
 } from './safe-files.js';
@@ -196,7 +197,8 @@ export async function createPlan(
 
   const arguments_ = [cliPath, 'test', '--list', '--reporter=json'];
   if (options.config !== undefined && options.config.length > 0) {
-    arguments_.push(`--config=${options.config}`);
+    const config = await resolveInputPath(options.workspace, options.config);
+    arguments_.push(`--config=${config}`);
   }
   if (options.producer.shard.total !== 1) {
     arguments_.push(
