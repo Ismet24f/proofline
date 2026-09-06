@@ -11,22 +11,13 @@ export interface ObservedOutcomeInput {
   plannedExpectedStatus: PlannedExpectedStatus;
 }
 
-export interface OutcomeReportContext {
-  reportInterrupted: boolean;
-}
-
 export function deriveObservedOutcome(
   test: ObservedOutcomeInput,
-  reportContext: OutcomeReportContext,
 ): Classification {
   if (test.attempts.includes('interrupted')) {
     return 'incomplete';
   }
-  if (
-    reportContext.reportInterrupted &&
-    test.attempts.length === 0 &&
-    test.plannedExpectedStatus !== 'skipped'
-  ) {
+  if (test.attempts.length === 0 && test.plannedExpectedStatus !== 'skipped') {
     return 'incomplete';
   }
   if (test.status === 'skipped') {

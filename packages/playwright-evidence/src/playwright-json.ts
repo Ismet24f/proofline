@@ -100,9 +100,73 @@ function parseResult(value: unknown, path: string): PlaywrightResult {
   };
 }
 
+function validateTestSemantics(test: PlaywrightTest, path: string): void {
+  const attempts = test.results.map((result) => result.status);
+  const finalAttempt = attempts.at(-1);
+
+  if (test.status === 'expected') {
+    if (attempts.length !== 1) {
+      throw new Error(
+        `${path} with status expected must contain exactly one result`,
+      );
+    }
+    if (finalAttempt !== test.expectedStatus) {
+      throw new Error(
+        `${path} with status expected must match expectedStatus in its result`,
+      );
+    }
+    return;
+  }
+
+  if (test.status === 'flaky') {
+    if (attempts.length < 2) {
+      throw new Error(
+        `${path} with status flaky must contain at least two results`,
+      );
+    }
+    if (finalAttempt !== test.expectedStatus) {
+      throw new Error(
+        `${path} with status flaky final result must match expectedStatus`,
+      );
+    }
+    if (
+      !attempts.slice(0, -1).some((attempt) => attempt !== test.expectedStatus)
+    ) {
+      throw new Error(
+        `${path} with status flaky must contain an earlier unexpected result`,
+      );
+    }
+    return;
+  }
+
+  if (test.status === 'unexpected') {
+    if (attempts.length === 0) {
+      throw new Error(
+        `${path} with status unexpected must contain at least one result`,
+      );
+    }
+    if (finalAttempt === test.expectedStatus) {
+      throw new Error(
+        `${path} with status unexpected final result must differ from expectedStatus`,
+      );
+    }
+    return;
+  }
+
+  if (
+    attempts.length > 0 &&
+    finalAttempt !== 'skipped' &&
+    finalAttempt !== 'interrupted'
+  ) {
+    throw new Error(
+      `${path} with status skipped has an unsupported result sequence`,
+    );
+  }
+}
+
 function parseTest(value: unknown, path: string): PlaywrightTest {
   const input = record(value, path);
-  return {
+  const test: PlaywrightTest = {
     expectedStatus: enumValue(
       input.expectedStatus,
       ['passed', 'failed', 'skipped', 'timedOut', 'interrupted'] as const,
@@ -118,6 +182,8 @@ function parseTest(value: unknown, path: string): PlaywrightTest {
       `${path}.status`,
     ),
   };
+  validateTestSemantics(test, path);
+  return test;
 }
 
 function parseSpec(value: unknown, path: string): PlaywrightSpec {

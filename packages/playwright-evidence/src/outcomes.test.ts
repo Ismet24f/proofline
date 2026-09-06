@@ -51,10 +51,7 @@ describe('deriveObservedOutcome', () => {
     'classifies %s with attempts %j as %s evidence',
     (status, attempts, plannedExpectedStatus, expected) => {
       expect(
-        deriveObservedOutcome(
-          { status, attempts, plannedExpectedStatus },
-          { reportInterrupted: attempts.includes('interrupted') },
-        ),
+        deriveObservedOutcome({ status, attempts, plannedExpectedStatus }),
       ).toBe(expected);
     },
   );
@@ -71,14 +68,11 @@ describe('deriveObservedOutcome', () => {
       'interrupted',
     ]);
     expect(
-      deriveObservedOutcome(
-        {
-          status: test.status,
-          attempts: test.results.map((result) => result.status),
-          plannedExpectedStatus: 'passed',
-        },
-        { reportInterrupted: true },
-      ),
+      deriveObservedOutcome({
+        status: test.status,
+        attempts: test.results.map((result) => result.status),
+        plannedExpectedStatus: 'passed',
+      }),
     ).toBe('incomplete');
   });
 
@@ -91,14 +85,21 @@ describe('deriveObservedOutcome', () => {
 
     expect(test.results).toEqual([]);
     expect(
-      deriveObservedOutcome(
-        {
-          status: test.status,
-          attempts: [],
-          plannedExpectedStatus: 'passed',
-        },
-        { reportInterrupted: true },
-      ),
+      deriveObservedOutcome({
+        status: test.status,
+        attempts: [],
+        plannedExpectedStatus: 'passed',
+      }),
+    ).toBe('incomplete');
+  });
+
+  it('never treats a zero-attempt active test as executed without interruption context', () => {
+    expect(
+      deriveObservedOutcome({
+        status: 'expected',
+        attempts: [],
+        plannedExpectedStatus: 'passed',
+      }),
     ).toBe('incomplete');
   });
 
@@ -111,14 +112,11 @@ describe('deriveObservedOutcome', () => {
 
     expect(test.results.map((result) => result.status)).toEqual(['skipped']);
     expect(
-      deriveObservedOutcome(
-        {
-          status: test.status,
-          attempts: ['skipped'],
-          plannedExpectedStatus: 'passed',
-        },
-        { reportInterrupted: true },
-      ),
+      deriveObservedOutcome({
+        status: test.status,
+        attempts: ['skipped'],
+        plannedExpectedStatus: 'passed',
+      }),
     ).toBe('runtime_skipped');
   });
 });

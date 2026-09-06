@@ -129,4 +129,49 @@ describe('parsePlaywrightJson', () => {
       'uses reserved project name <default>',
     );
   });
+
+  it.each([
+    ['expected', 'passed', [], 'exactly one result'],
+    ['expected', 'passed', [{ status: 'failed' }], 'must match expectedStatus'],
+    [
+      'expected',
+      'passed',
+      [{ status: 'passed' }, { status: 'passed' }],
+      'exactly one result',
+    ],
+    ['flaky', 'passed', [{ status: 'passed' }], 'at least two results'],
+    [
+      'flaky',
+      'passed',
+      [{ status: 'failed' }, { status: 'failed' }],
+      'final result must match expectedStatus',
+    ],
+    [
+      'flaky',
+      'passed',
+      [{ status: 'passed' }, { status: 'passed' }],
+      'must contain an earlier unexpected result',
+    ],
+    ['unexpected', 'passed', [], 'at least one result'],
+    [
+      'unexpected',
+      'passed',
+      [{ status: 'passed' }],
+      'final result must differ from expectedStatus',
+    ],
+    [
+      'skipped',
+      'passed',
+      [{ status: 'passed' }],
+      'unsupported result sequence',
+    ],
+  ])(
+    'rejects contradictory %s / %s evidence with results %j',
+    async (status, expectedStatus, results, message) => {
+      const raw = await rawFixture();
+      Object.assign(firstTest(raw), { status, expectedStatus, results });
+
+      expect(() => parsePlaywrightJson(raw)).toThrow(message);
+    },
+  );
 });

@@ -326,9 +326,6 @@ async function reconcileValidArtifacts(
       throw new ReconciliationToolError('selection_mismatch', key);
     }
     const normalizedObserved = flattenPlaywrightTests(report);
-    const reportInterrupted = normalizedObserved.some((test) =>
-      test.observed.results.some((result) => result.status === 'interrupted'),
-    );
     const observed = new Map(
       normalizedObserved.map((test) => [test.identity.key, test]),
     );
@@ -356,16 +353,11 @@ async function reconcileValidArtifacts(
       const classification =
         actual === undefined
           ? ('absent' as const)
-          : deriveObservedOutcome(
-              {
-                status: actual.observed.status,
-                attempts: actual.observed.results.map(
-                  (result) => result.status,
-                ),
-                plannedExpectedStatus: planned.expectedStatus,
-              },
-              { reportInterrupted },
-            );
+          : deriveObservedOutcome({
+              status: actual.observed.status,
+              attempts: actual.observed.results.map((result) => result.status),
+              plannedExpectedStatus: planned.expectedStatus,
+            });
       incrementClassification(counts, classification);
       tests.push({
         producer,
