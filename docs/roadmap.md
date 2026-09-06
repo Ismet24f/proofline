@@ -56,7 +56,7 @@ specification and security/privacy model are required before any hosted code.
 - [x] Independent code and security review of head `4204274b9232eddeab5425c4ee1e2f1e815982f4` has no unresolved release blocker; its tree is identical to the squash merge commit.
 - [ ] At least 20 distinct genuine PR observations pass the [Phase C dogfood gate](validation/phase-c-dogfood.md).
 - [ ] No Phase C classification mismatch remains unresolved.
-- [ ] A separate consumer repository passes from a fresh clone with no Proofline package installation.
+- [x] A [separate consumer repository](https://github.com/Ismet24f/proofline-playwright-consumer/tree/55a1b507a2f8676d610a9cb3252d61916fa9e484) passes from a fresh clone with no Proofline package installation; its [commit-pinned workflow](https://github.com/Ismet24f/proofline-playwright-consumer/actions/runs/34053494835) and retained artifacts were independently verified.
 - [ ] Create immutable `v0.1.0` only from the reviewed, green merge commit.
 - [ ] Generate and publish SHA-256 checksums for the release source archive and bundled action.
 - [ ] Move floating `v0.1` to the exact approved `v0.1.0` commit only after checksum verification.

@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "status": "draft",
-  "repositoryAlias": "",
-  "verifiedCommit": "",
-  "playwrightVersion": "",
-  "freshClone": "",
-  "noProoflinePackage": "",
-  "workflowConclusion": "",
-  "prooflineReportSha256": "",
-  "rawReportSha256": "",
-  "verifiedAt": "",
-  "reviewerAlias": "",
-  "evidenceRef": ""
+  "status": "verified",
+  "repositoryAlias": "R-000002",
+  "verifiedCommit": "55a1b507a2f8676d610a9cb3252d61916fa9e484",
+  "playwrightVersion": "1.62.1",
+  "freshClone": "yes",
+  "noProoflinePackage": "yes",
+  "workflowConclusion": "success",
+  "prooflineReportSha256": "8683271f89f729d744837ab0751807e97796b661e9dab9eb9e3f8020f92719fc",
+  "rawReportSha256": "7ab67257ae0b7cb6d431e94c4a948c774f58920a9b2d2732eb7e69eac6962a89",
+  "verifiedAt": "2026-09-06T19:09:22Z",
+  "reviewerAlias": "P-000002",
+  "evidenceRef": "E-000002"
 }

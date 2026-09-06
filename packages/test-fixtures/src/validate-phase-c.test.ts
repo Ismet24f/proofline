@@ -147,7 +147,7 @@ afterEach(() => {
 });
 
 describe('validate-phase-c', () => {
-  it('reports the current public contracts as observing', () => {
+  it('keeps the current public contracts observing at one PR with a verified consumer', () => {
     const output = execFileSync(process.execPath, [SCRIPT], {
       cwd: REPOSITORY_ROOT,
       encoding: 'utf8',
@@ -164,7 +164,7 @@ describe('validate-phase-c', () => {
         toolErrorObservations: 0,
         requiredPullRequests: 20,
       },
-      consumerVerified: false,
+      consumerVerified: true,
       authority: {
         status: 'non_authoritative',
         independentReviewRequired: true,

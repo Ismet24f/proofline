@@ -89,6 +89,15 @@ alias, and protected evidence. The consumer check proves installability only;
 it does not count as one of the 20 genuine PR observations unless it separately
 meets the observation protocol.
 
+For a single raw report, `rawReportSha256` is that file's digest. For multiple
+reports, it is the SHA-256 of a UTF-8 manifest without a byte-order mark. The
+manifest contains exactly one LF-terminated line for each reconciliation
+topology entry, including missing entries. Each line has
+`<producer> <current>/<total> <raw-report-sha256-or-missing>`. Sort lines by
+producer ID in ASCII byte order, then by numeric shard `current`, then by
+numeric shard `total`. This definition makes the public aggregate reproducible
+while the protected evidence retains every individual file digest.
+
 ## Evaluate readiness
 
 ```sh
