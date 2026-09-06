@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  stat,
   symlink,
   writeFile,
 } from 'node:fs/promises';
@@ -167,6 +168,7 @@ function classificationByTitle(
 async function runBundledAction(
   workspace: string,
   inputs: Readonly<Record<string, string>>,
+  environment: NodeJS.ProcessEnv = {},
 ) {
   const output = join(workspace, 'github-output.txt');
   const summary = join(workspace, 'github-summary.md');
@@ -184,6 +186,7 @@ async function runBundledAction(
     args: [actionEntrypoint],
     env: {
       ...githubEnvironment(workspace),
+      ...environment,
       ...actionInputs,
       GITHUB_OUTPUT: output,
       GITHUB_STEP_SUMMARY: summary,
@@ -290,6 +293,26 @@ describe('real Playwright evidence workflows', { timeout: 30_000 }, () => {
     });
 
     expect(execution.stdout).toContain('Running 1 test using 1 worker');
+    expect(report).toMatchObject({
+      status: 'complete',
+      counts: { plannedActive: 1, executedAsExpected: 1 },
+    });
+  });
+
+  it('preserves an explicit HTML reporter while collecting JSON evidence', async () => {
+    const workspace = await prepareWorkspace();
+    const htmlOutput = join(workspace, 'html-report');
+    const { report } = await executeScope({
+      workspace,
+      playwrightArguments: ['--project=chromium', '--grep=passes$'],
+      expectedExitCode: 0,
+      reporters: ['--reporter=html,json'],
+      env: { PLAYWRIGHT_HTML_OUTPUT_DIR: htmlOutput },
+    });
+
+    await expect(stat(join(htmlOutput, 'index.html'))).resolves.toMatchObject(
+      {},
+    );
     expect(report).toMatchObject({
       status: 'complete',
       counts: { plannedActive: 1, executedAsExpected: 1 },
@@ -406,6 +429,99 @@ describe('real Playwright evidence workflows', { timeout: 30_000 }, () => {
     });
   });
 
+  it('treats compilation-time SIGINT with no JSON report as no evidence', async () => {
+    const workspace = await prepareWorkspace(resultFixtureSource);
+    const producer = { id: 'e2e', shard: { current: 1, total: 1 } } as const;
+    const env = githubEnvironment(workspace);
+    const scope = 'proofline/e2e-1-of-1';
+    await createPlan({
+      workspace,
+      producer,
+      playwrightArguments: 'tests/compile-sigint.spec.ts',
+      config: 'playwright.config.ts',
+      repository,
+      revision,
+      env,
+      out: `${scope}/plan.json`,
+    });
+    const reportPath = join(workspace, scope, 'report.json');
+    const execution = await runCommand({
+      cwd: workspace,
+      command: process.execPath,
+      args: [
+        resolvePlaywrightCli(workspace),
+        'test',
+        '--config=playwright.config.ts',
+        'tests/compile-sigint.spec.ts',
+        '--reporter=line,json',
+      ],
+      env: {
+        ...env,
+        PROOFLINE_DELAY_COMPILE: 'true',
+        PLAYWRIGHT_JSON_OUTPUT_FILE: reportPath,
+      },
+      signalOnStdout: {
+        marker: 'PROOFLINE_COMPILING',
+        timeoutMs: 15_000,
+      },
+    });
+    expect(execution).toMatchObject({ code: null, signal: 'SIGINT' });
+    await expect(stat(reportPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      collectEvidence({
+        workspace,
+        producer,
+        plan: `${scope}/plan.json`,
+        report: `${scope}/report.json`,
+        out: `${scope}/envelope.json`,
+        env,
+      }),
+    ).rejects.toMatchObject({ code: 'report_missing' });
+
+    const report = await reconcileEvidence({
+      workspace,
+      artifacts: 'proofline',
+      producers: 'e2e=1',
+      mode: 'report-only',
+      out: 'reconciliation.json',
+      repository,
+      revision,
+      runId,
+      runAttempt,
+    });
+    expect(report).toMatchObject({
+      status: 'evidence_gaps',
+      counts: { noEvidence: 1, producerGaps: 1, knownTestGaps: 1 },
+      tests: [{ classification: 'no_evidence' }],
+    });
+  });
+
+  it('rejects real evidence produced for a different revision', async () => {
+    const workspace = await prepareWorkspace();
+    await executeScope({
+      workspace,
+      playwrightArguments: ['--project=chromium', '--grep=passes$'],
+      expectedExitCode: 0,
+      reconcileProducers: false,
+    });
+
+    const report = await reconcileEvidence({
+      workspace,
+      artifacts: 'proofline',
+      producers: 'e2e=1',
+      mode: 'report-only',
+      out: 'reconciliation.json',
+      repository,
+      revision: 'c'.repeat(40),
+      runId,
+      runAttempt,
+    });
+    expect(report).toMatchObject({
+      status: 'tool_error',
+      exitDecision: { code: 2, reasonCodes: ['artifact_identity_mismatch'] },
+    });
+  });
+
   it('writes a diagnostic envelope and report for a real project selection mismatch', async () => {
     const workspace = await prepareWorkspace();
     const producer = { id: 'e2e', shard: { current: 1, total: 1 } } as const;
@@ -491,6 +607,39 @@ describe('real Playwright evidence workflows', { timeout: 30_000 }, () => {
         out: 'proofline/plan.json',
       }),
     ).rejects.toThrow(`cannot resolve @playwright/test/cli from ${workspace}`);
+  });
+
+  it('plans successfully under an active process-level network denial', async () => {
+    const workspace = await prepareWorkspace(consumerFixtureSource);
+    const denyNetwork = join(
+      repositoryRoot,
+      'packages/test-fixtures/scripts/deny-network.mjs',
+    );
+    const environment = { NODE_OPTIONS: `--import=${denyNetwork}` };
+    const sentinel = await runCommand({
+      cwd: workspace,
+      command: process.execPath,
+      args: ['-e', "fetch('https://example.com')"],
+      env: { ...githubEnvironment(workspace), ...environment },
+    });
+    expect(sentinel.code).not.toBe(0);
+    expect(sentinel.stderr).toContain('PROOFLINE_NETWORK_FORBIDDEN');
+
+    const plan = await runBundledAction(
+      workspace,
+      {
+        operation: 'plan',
+        producer: 'e2e',
+        shard: '1/1',
+        'playwright-args': '--project=chromium',
+        config: 'playwright.config.ts',
+        repository,
+        revision,
+        out: 'proofline/plan.json',
+      },
+      environment,
+    );
+    expect(plan.code, plan.stderr || plan.stdout).toBe(0);
   });
 
   it('runs the published three-shard topology in a consumer with no Proofline package', async () => {

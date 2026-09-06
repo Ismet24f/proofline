@@ -161,12 +161,13 @@ jobs:
           operation: plan
           producer: e2e
           shard: ${{ matrix.shard }}/3
+          out: proofline/e2e-${{ matrix.shard }}-of-3/plan.json
           playwright-args: --project=chromium
 
       - name: Playwright
         run: npx playwright test --project=chromium --shard=${{ matrix.shard }}/3 --reporter=list,json
         env:
-          PLAYWRIGHT_JSON_OUTPUT_FILE: proofline/report.json
+          PLAYWRIGHT_JSON_OUTPUT_FILE: proofline/e2e-${{ matrix.shard }}-of-3/report.json
 
       - name: Proofline collect
         if: always()
@@ -175,7 +176,9 @@ jobs:
           operation: collect
           producer: e2e
           shard: ${{ matrix.shard }}/3
-          report: proofline/report.json
+          plan: proofline/e2e-${{ matrix.shard }}-of-3/plan.json
+          report: proofline/e2e-${{ matrix.shard }}-of-3/report.json
+          out: proofline/e2e-${{ matrix.shard }}-of-3/envelope.json
 
       - uses: actions/upload-artifact@<full-sha> # current major, reviewed SHA
         if: always()

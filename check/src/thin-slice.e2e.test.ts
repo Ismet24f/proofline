@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { renderGitHubSummary } from '@proofline/playwright-evidence';
+
 import {
   dispatchAction,
   type ActionRuntime,
@@ -36,6 +38,7 @@ type Scenario =
   | 'runtime-skipped'
   | 'retry-masked'
   | 'selection-mismatch'
+  | 'transport'
   | 'active-disabled';
 
 class TestActionsPort implements ActionsPort {
@@ -160,12 +163,13 @@ async function runSlice(options: { scenario: Scenario }): Promise<unknown> {
     'runtime-skipped': 'runtime skips$',
     'retry-masked': 'passes after retry$',
     'selection-mismatch': 'passes$',
+    transport: 'passes$',
     'active-disabled': '(passes$|disabled$)',
   };
   const grep = grepByScenario[options.scenario];
   const playwrightArguments = `--project=chromium\n--grep=${grep}`;
 
-  const reconcile = async (): Promise<unknown> => {
+  const reconcile = async (includeTransport = false): Promise<unknown> => {
     const reconcilePort = new TestActionsPort({
       operation: 'reconcile',
       producers: 'e2e=1',
@@ -176,7 +180,14 @@ async function runSlice(options: { scenario: Scenario }): Promise<unknown> {
     });
     await dispatchAction(reconcilePort, undefined, testRuntime(env));
     expect(reconcilePort.failures).toEqual([]);
-    return readJson(join(workspace, 'reconciliation.json'));
+    const report = await readJson(join(workspace, 'reconciliation.json'));
+    return includeTransport
+      ? {
+          report,
+          outputs: Object.fromEntries(reconcilePort.outputs),
+          summaries: reconcilePort.summaries,
+        }
+      : report;
   };
 
   if (options.scenario === 'missing-producer') {
@@ -281,7 +292,7 @@ async function runSlice(options: { scenario: Scenario }): Promise<unknown> {
     };
   }
   expect(collectPort.failures).toEqual([]);
-  return reconcile();
+  return reconcile(options.scenario === 'transport');
 }
 
 afterEach(async () => {
@@ -379,5 +390,30 @@ describe('Proofline thin vertical slice', () => {
       { status: 'skipped', expectedStatus: 'passed' },
       { status: 'skipped', expectedStatus: 'skipped' },
     ]);
+  });
+
+  it('maps real JSON counts exactly to action outputs and the rendered summary', async () => {
+    const result = await runSlice({ scenario: 'transport' });
+    if (!isRecord(result) || !isRecord(result.report)) {
+      throw new Error('expected transport evidence');
+    }
+    const report = result.report as unknown as Parameters<
+      typeof renderGitHubSummary
+    >[0];
+    expect(result.outputs).toEqual({
+      status: report.status,
+      'planned-active': report.counts.plannedActive,
+      'producer-gaps': report.counts.producerGaps,
+      'known-test-gaps': report.counts.knownTestGaps,
+      'not-executed': report.counts.notExecuted,
+      'retry-masked': report.counts.retryMasked,
+      failed: report.counts.failed,
+      unexpected: report.counts.unexpected,
+      'selection-mismatch': String(
+        report.exitDecision.reasonCodes.includes('selection_mismatch'),
+      ),
+      'report-path': 'reconciliation.json',
+    });
+    expect(result.summaries).toEqual([renderGitHubSummary(report)]);
   });
 });

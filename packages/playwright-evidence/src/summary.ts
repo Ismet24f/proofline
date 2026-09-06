@@ -14,7 +14,15 @@ function headline(report: ReconciliationReport): string {
 }
 
 function producerLabel(record: ProducerEvidenceRecord): string {
-  return `${record.producer.id} ${String(record.producer.shard.current)}/${String(record.producer.shard.total)}`;
+  return escapeMarkdownInline(
+    `${record.producer.id} ${String(record.producer.shard.current)}/${String(record.producer.shard.total)}`,
+  );
+}
+
+function escapeMarkdownInline(value: string): string {
+  return value
+    .replace(/[\r\n]+/gu, ' ')
+    .replace(/([\\`*_[\]{}<>#!|])/gu, '\\$1');
 }
 
 export function renderGitHubSummary(report: ReconciliationReport): string {
@@ -66,7 +74,8 @@ export function renderGitHubSummary(report: ReconciliationReport): string {
       '## Retry-masked tests',
       '',
       ...retryMasked.map(
-        (test) => `- ${test.identity.file}:${String(test.identity.line)}`,
+        (test) =>
+          `- ${escapeMarkdownInline(test.identity.file)}:${String(test.identity.line)}`,
       ),
     );
   }
@@ -82,11 +91,11 @@ export function renderGitHubSummary(report: ReconciliationReport): string {
       .filter((test) => gapClasses.has(test.classification))
       .map((test) => ({
         key: test.identity.key,
-        text: `- ${test.identity.file}:${String(test.identity.line)} — ${test.classification}`,
+        text: `- ${escapeMarkdownInline(test.identity.file)}:${String(test.identity.line)} — ${test.classification}`,
       })),
     ...report.unexpectedTests.map((test) => ({
       key: test.identity.key,
-      text: `- ${test.identity.file}:${String(test.identity.line)} — unexpected`,
+      text: `- ${escapeMarkdownInline(test.identity.file)}:${String(test.identity.line)} — unexpected`,
     })),
   ]
     .sort((left, right) => left.key.localeCompare(right.key))

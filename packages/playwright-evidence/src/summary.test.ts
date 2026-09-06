@@ -126,4 +126,43 @@ describe('renderGitHubSummary', () => {
       ).split('\n')[0],
     ).toBe('❌ TOOL ERROR — Proofline could not evaluate this run');
   });
+
+  it('escapes report-controlled paths before writing Markdown', () => {
+    const unsafeFile =
+      'tests/a|name\n## injected [link](https://example.com).spec.ts';
+    const summary = renderGitHubSummary(
+      report({
+        tests: [
+          {
+            producer,
+            identity: {
+              key: '["chromium","unsafe"]',
+              projectName: 'chromium',
+              playwrightTestId: 'unsafe',
+              file: unsafeFile,
+              line: 1,
+              column: 1,
+              titlePath: ['unsafe'],
+            },
+            expectedStatus: 'passed',
+            classification: 'absent',
+            reasonCodes: ['test_absent'],
+          },
+        ],
+        counts: {
+          ...report().counts,
+          plannedActive: 1,
+          absent: 1,
+          knownTestGaps: 1,
+          notExecuted: 1,
+        },
+        status: 'evidence_gaps',
+      }),
+    );
+
+    expect(summary).not.toContain('\n## injected');
+    expect(summary).toContain(
+      'tests/a\\|name \\#\\# injected \\[link\\](https://example.com).spec.ts:1',
+    );
+  });
 });
