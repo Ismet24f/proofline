@@ -9,6 +9,12 @@ describe('parseArgumentLines', () => {
     ).toEqual(['--project=chromium', 'tests/checkout']);
   });
 
+  it('preserves spaces inside an equals-form grep value', () => {
+    expect(parseArgumentLines('--grep=checkout pays')).toEqual([
+      '--grep=checkout pays',
+    ]);
+  });
+
   it.each([
     ['--project chromium', 'one argument per line; use --project=chromium'],
     ['-g pays', 'one argument per line; use --grep=pays'],

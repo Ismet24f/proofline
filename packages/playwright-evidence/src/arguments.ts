@@ -47,7 +47,11 @@ export function parseArgumentLines(input: string): string[] {
         `action-owned playwright argument is not allowed: ${name}`,
       );
     }
-    if (/\s/u.test(argument) && argument.startsWith('-')) {
+    if (
+      /\s/u.test(argument) &&
+      argument.startsWith('-') &&
+      !argument.includes('=')
+    ) {
       splitOptionLine(argument);
     }
     if (argument.startsWith('-')) {

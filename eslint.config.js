@@ -7,7 +7,7 @@ module.exports = tseslint.config(
   },
   js.configs.recommended,
   {
-    files: ['packages/*/src/**/*.ts'],
+    files: ['packages/*/src/**/*.ts', 'check/src/**/*.ts'],
     extends: [tseslint.configs.strictTypeChecked],
     languageOptions: {
       parserOptions: {

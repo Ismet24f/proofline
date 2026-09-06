@@ -5,6 +5,7 @@ dist/
 !check/dist/
 !check/dist/**
 coverage/
+test-results/
 **/.proofline/inventory.json
 **/.proofline/reports/
 .turbo/
