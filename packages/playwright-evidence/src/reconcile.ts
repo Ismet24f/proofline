@@ -190,8 +190,12 @@ export async function reconcileEvidence(
       throw new Error(`report digest mismatch for ${key}`);
     }
     const report = parsePlaywrightJson(await readBoundedJson(reportPath));
+    const normalizedObserved = flattenPlaywrightTests(report);
+    const reportInterrupted = normalizedObserved.some((test) =>
+      test.observed.results.some((result) => result.status === 'interrupted'),
+    );
     const observed = new Map(
-      flattenPlaywrightTests(report).map((test) => [test.identity.key, test]),
+      normalizedObserved.map((test) => [test.identity.key, test]),
     );
     const active = plan.tests.filter(
       (test) => test.expectedStatus !== 'skipped',
@@ -204,7 +208,16 @@ export async function reconcileEvidence(
       const classification =
         actual === undefined
           ? ('absent' as const)
-          : deriveObservedOutcome(actual.observed);
+          : deriveObservedOutcome(
+              {
+                status: actual.observed.status,
+                attempts: actual.observed.results.map(
+                  (result) => result.status,
+                ),
+                plannedExpectedStatus: planned.expectedStatus,
+              },
+              { reportInterrupted },
+            );
       incrementClassification(counts, classification);
       tests.push({
         producer,

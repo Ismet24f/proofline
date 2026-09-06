@@ -1,18 +1,42 @@
-import type { Classification } from '@proofline/evidence-model';
+import type {
+  Classification,
+  PlannedExpectedStatus,
+} from '@proofline/evidence-model';
 
-import type { PlaywrightTest } from './playwright-json.js';
+import type { PlaywrightResult, PlaywrightTest } from './playwright-json.js';
 
-export function deriveObservedOutcome(test: PlaywrightTest): Classification {
-  if (test.status === 'expected') {
-    return 'executed_as_expected';
+export interface ObservedOutcomeInput {
+  status: PlaywrightTest['status'];
+  attempts: readonly PlaywrightResult['status'][];
+  plannedExpectedStatus: PlannedExpectedStatus;
+}
+
+export interface OutcomeReportContext {
+  reportInterrupted: boolean;
+}
+
+export function deriveObservedOutcome(
+  test: ObservedOutcomeInput,
+  reportContext: OutcomeReportContext,
+): Classification {
+  if (test.attempts.includes('interrupted')) {
+    return 'incomplete';
+  }
+  if (
+    reportContext.reportInterrupted &&
+    test.attempts.length === 0 &&
+    test.plannedExpectedStatus !== 'skipped'
+  ) {
+    return 'incomplete';
   }
   if (test.status === 'skipped') {
     return 'runtime_skipped';
   }
+  if (test.status === 'expected') {
+    return 'executed_as_expected';
+  }
   if (test.status === 'flaky') {
     return 'retry_masked';
   }
-  throw new Error(
-    `unsupported Playwright outcome in thin slice: ${test.status}`,
-  );
+  return 'failed';
 }

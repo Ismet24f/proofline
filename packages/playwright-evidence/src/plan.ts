@@ -115,7 +115,7 @@ function canonicalJson(value: unknown): string {
     .join(',')}}`;
 }
 
-function digestPlan(plan: Omit<PlanArtifact, 'digest'>): string {
+export function computePlanDigest(plan: Omit<PlanArtifact, 'digest'>): string {
   return createHash('sha256').update(canonicalJson(plan)).digest('hex');
 }
 
@@ -172,7 +172,7 @@ export function normalizePlanJson(
   };
   return parsePlanArtifact({
     ...withoutDigest,
-    digest: digestPlan(withoutDigest),
+    digest: computePlanDigest(withoutDigest),
   });
 }
 
