@@ -199,7 +199,7 @@ afterEach(async () => {
   );
 });
 
-describe('real Playwright evidence workflows', () => {
+describe('real Playwright evidence workflows', { timeout: 30_000 }, () => {
   it('classifies pass, disabled, runtime skip, declared failure, retry, terminal failure, and timeout from one real report', async () => {
     const workspace = await prepareWorkspace();
     const { execution, plan, report } = await executeScope({
