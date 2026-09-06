@@ -197,7 +197,7 @@ git status --short
 
 Expected: no whitespace errors and a clean worktree after commits.
 
-- [ ] **Step 3: Request independent review**
+- [x] **Step 3: Request independent review**
 
 Review the exact immutable head for validation bypasses, privacy leaks, false readiness, duplicate counting, and unsupported market claims. Resolve all Important or Critical findings before push approval.
 
