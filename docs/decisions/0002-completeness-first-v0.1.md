@@ -1,6 +1,6 @@
 # ADR 0002: Completeness-first v0.1
 
-**Status:** ACCEPTED  
+**Status:** ACCEPTED
 **Date:** 2026-09-06
 
 ## Context

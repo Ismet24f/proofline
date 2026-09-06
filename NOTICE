@@ -1,2 +1,6 @@
 Proofline
 Copyright 2026 Proofline contributors
+
+The distributed GitHub Action contains bundled third-party software. Package,
+version, license, and license-text attribution is recorded in
+THIRD_PARTY_NOTICES.md and verified against check/scripts/bundled-dependencies.json.

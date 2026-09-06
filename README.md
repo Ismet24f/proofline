@@ -6,7 +6,7 @@ A normal GitHub rollup job can catch failed, cancelled, or skipped jobs. It cann
 
 ## Current status
 
-Proofline v0.1 is an unreleased open-source, local-only GitHub Action with three operations: `plan`, `collect`, and `reconcile`. The action and its committed `check/dist` bundle are implemented and under release-candidate validation. Do not depend on `v0.1.0` until that tag is published.
+Proofline v0.1 is an unreleased open-source, local-only GitHub Action with three operations: `plan`, `collect`, and `reconcile`. The action and its committed `check/dist` bundle are implemented, pass the repository's live release-candidate workflows, and await independent review. Do not depend on `v0.1.0` until that tag is published.
 
 The action runs entirely on the GitHub runner. Consumers do not install a Proofline npm package, provide a token, add Proofline annotations, or send test data to a hosted service.
 
@@ -52,6 +52,8 @@ pnpm turbo run lint typecheck build test --force
 ```
 
 The authoritative contracts are the [v0.1 specification](docs/superpowers/specs/2026-09-06-proofline-completeness-first-v0.1.md), [implementation plan](docs/superpowers/plans/2026-09-06-proofline-completeness-first-v0.1-implementation.md), and [ADR 0002](docs/decisions/0002-completeness-first-v0.1.md).
+
+The [roadmap and release checklist](docs/roadmap.md) keep technical readiness separate from demand. External validation uses one frozen [30-day decision gate](docs/validation/decision-gate.md) and two machine-checked, alias-only CSV contracts. No pilot clock has started, no external adoption is claimed, and the current market verdict is **promising, not proven**.
 
 ## License
 
