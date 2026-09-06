@@ -10,14 +10,17 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-06-proofline-completeness-first-v0.1.md`
 
+**Estimated effort:** 60–90 focused engineering hours. The 30-hour mark is a scope and evidence checkpoint after Task 3½, not a delivery promise; correctness and security gates are not cut to meet it.
+
 ## Global Constraints
 
 - Product wording is “planned,” never “should have run.” Proofline makes no business-coverage or release-safety claim.
-- Playwright 1.62.x is the only supported report shape for v0.1; unknown shapes fail closed as tool errors.
+- Playwright 1.62.x is the only supported semantic contract for v0.1; unknown versions and shapes fail closed as tool errors. A future minor is added only after the full subprocess behavior matrix passes for that minor—field presence alone cannot prove reporter semantics.
+- Pilot repositories freeze their Playwright dependency to a tested 1.62.x lockfile for the observation window. A requested minor upgrade pauses that repository's observations until the compatibility matrix passes; it is not silently accepted mid-pilot.
 - Node 22 and Node 24 are supported; Node 20 is explicitly refused.
 - Proofline never invokes `npx`, opens a network connection, or uses a shell to execute consumer input.
 - The consumer installs no Proofline package and supplies no token or Proofline test annotations.
-- Canonical same-run identity is `[projectName, playwrightTestId]`; no cross-commit stability is claimed.
+- Canonical same-run identity is `[projectName, playwrightTestId]`; `projectName` is a defence-in-depth partition, not claimed necessary for uniqueness, and no cross-commit stability is claimed.
 - Configuration-defined selectors are trusted through same revision plus same repository-relative config path. CLI selectors are compared from canonicalized `config.argv`; serialized regex objects and `config.projects` are not misrepresented as selected values.
 - `retry_masked` is separate from `not_executed` and never blocks v0.1.
 - `report-only` is the pilot default; tool errors fail in every mode.
@@ -25,6 +28,7 @@
 - All output writes are atomic. Malformed or partial input must never leave a stale current-looking report.
 - Third-party GitHub actions are pinned to reviewed full commit SHAs in committed workflows.
 - Work test-first. Each task ends with focused verification, the root check when applicable, diff review, and one atomic commit.
+- Command blocks use the active `node` and `pnpm` from `PATH`. Before each block, verify `node --version` is a supported major and activate Node 22 or 24 with the environment's version manager; the GitHub matrix is the cross-machine authority. No workstation-specific absolute runtime path belongs in this plan or CI.
 
 ## File and Responsibility Map
 
@@ -55,19 +59,23 @@
 
 | Spec scenario                        | Owning task | Evidence                                |
 | ------------------------------------ | ----------- | --------------------------------------- |
-| 1–2 clean single/multi-shard         | 4, 6, 8     | subprocess plus reconciliation fixtures |
-| 3 skipped job                        | 9           | real GitHub workflow                    |
+| 1 clean single shard                 | 3½          | early vertical subprocess slice         |
+| 2 clean multi-shard                  | 4, 6, 8     | subprocess plus reconciliation fixtures |
+| 3 skipped job                        | 3½, 9       | early artifact slice plus real workflow |
 | 4 missing upload                     | 6, 9        | fixture plus real GitHub workflow       |
-| 5, 9–11 failures/outcomes/retries    | 5, 8        | real Playwright JSON fixtures           |
-| 6–8 absent/disabled/runtime skip     | 4–6, 8      | parser and subprocess fixtures          |
-| 12 interruption                      | 5, 9        | signal fixture plus real workflow       |
+| 5, 9, 11 failures/outcomes           | 5, 8        | real Playwright JSON fixtures           |
+| 10 retry outcome                     | 3½, 5, 8    | early slice plus subprocess fixture     |
+| 6 absent                             | 3½, 6, 8    | early slice plus reconciliation fixture |
+| 7 disabled                           | 4, 8        | list parser and subprocess fixtures     |
+| 8 runtime skip                       | 3½, 5, 8    | early slice plus subprocess fixture     |
+| 12 interruption                      | 5, 8, 9     | owned-child signal fixture and workflow |
 | 13–15 unexpected/invalid/determinism | 2, 3, 6     | pure bounded fixtures                   |
 | 16 reporter coexistence              | 8           | subprocess fixture                      |
 | 17 no Proofline install              | 8           | isolated consumer fixture               |
 | 18 modes                             | 6, 7        | reconciliation and action-adapter tests |
 | 19 output consistency                | 6, 7        | report/summary/output contract tests    |
-| 20 selection mismatch                | 5, 9        | fixture plus real workflow              |
-| 21 `expectedStatus` invariant        | 4           | list JSON fixture                       |
+| 20 selection mismatch                | 3½, 5, 9    | early slice, fixture, real workflow     |
+| 21 `expectedStatus` invariant        | 3½, 4       | early list JSON fixture                 |
 | 22 missing Playwright/no network     | 3, 4        | blocked-network fixture                 |
 | 23 Node matrix/refusal               | 1, 9        | local and GitHub matrix                 |
 | 24 repeat-each identity              | 4, 8        | subprocess fixture                      |
@@ -116,14 +124,14 @@ it('does not export the retired release-intelligence schemas', () => {
 Run:
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/evidence-model test -- src/schemas.test.ts
+pnpm --filter @proofline/evidence-model test -- src/schemas.test.ts
 ```
 
 Expected: FAIL because the retired types and schemas remain exported.
 
 - [ ] **Step 3: Remove speculative public code and document the decision**
 
-Delete only recommendation, changed-file, evidence-assertion, policy-violation, and release-decision types/schemas/tests. Keep `TestInventory`, `TestDefinition`, and parsing needed by the current reporter until Task 9 removes its consumer path. Write ADR 0002 with sections `Context`, `Decision`, `Consequences`, and `Supersedes`, stating that Git history—not `docs/archive`—preserves removed code.
+Delete only recommendation, changed-file, evidence-assertion, policy-violation, and release-decision types/schemas/tests. Keep `TestInventory`, `TestDefinition`, and parsing needed by the current reporter until Task 8 removes its consumer path. Write ADR 0002 with sections `Context`, `Decision`, `Consequences`, and `Supersedes`, stating that Git history—not `docs/archive`—preserves removed code.
 
 Set:
 
@@ -169,9 +177,13 @@ If `.object.type` is `tag`, peel it with `gh api repos/OWNER/REPO/git/tags/SHA -
 Run:
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v22.22.2/bin:$PATH pnpm install --frozen-lockfile
-PATH=/Users/ankora/.nvm/versions/node/v22.22.2/bin:$PATH pnpm turbo run lint typecheck build test --force
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm turbo run lint typecheck build test --force
+# Activate Node 22 with the environment's version manager.
+node --version # expect v22.x
+pnpm install --frozen-lockfile
+pnpm turbo run lint typecheck build test --force
+# Activate Node 24 with the environment's version manager.
+node --version # expect v24.x
+pnpm turbo run lint typecheck build test --force
 rg -n 'ReleaseDecision|RegressionPlan|PolicyViolation|should have run|Node 20' README.md packages/evidence-model/src docs/decisions/0002-completeness-first-v0.1.md
 ```
 
@@ -230,7 +242,7 @@ it.each([
 Run:
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/evidence-model test -- src/completeness-schemas.test.ts
+pnpm --filter @proofline/evidence-model test -- src/completeness-schemas.test.ts
 ```
 
 Expected: FAIL because completeness schemas do not exist.
@@ -283,10 +295,10 @@ Cross-field refinements must enforce `current <= total`, unique producer refs, u
 Add one valid fixture per artifact and one negative mutation per invariant. Run the focused test, then package lint/typecheck/build:
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/evidence-model test -- src/completeness-schemas.test.ts
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/evidence-model lint
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/evidence-model typecheck
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/evidence-model build
+pnpm --filter @proofline/evidence-model test -- src/completeness-schemas.test.ts
+pnpm --filter @proofline/evidence-model lint
+pnpm --filter @proofline/evidence-model typecheck
+pnpm --filter @proofline/evidence-model build
 ```
 
 Expected: all pass.
@@ -329,6 +341,9 @@ expect(parseArgumentLines('--project=chromium\ntests/checkout')).toEqual([
   '--project=chromium',
   'tests/checkout',
 ]);
+expect(() => parseArgumentLines('--project chromium')).toThrow(
+  'one argument per line; use --project=chromium',
+);
 expect(() => parseArgumentLines('--reporter=json')).toThrow('action-owned');
 expect(normalizeSelectionArgv(['--project', 'chromium', '-g', 'pays'])).toEqual(
   ['--grep=pays', '--project=chromium'],
@@ -338,7 +353,7 @@ expect(normalizeSelectionArgv(['--project', 'chromium', '-g', 'pays'])).toEqual(
 - [ ] **Step 2: Run tests and confirm RED**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test
+pnpm --filter @proofline/playwright-evidence test
 ```
 
 Expected: FAIL because the package and functions do not exist.
@@ -372,10 +387,10 @@ Normalize HTTPS and SSH GitHub origin URLs to `owner/repo`. Read `GITHUB_EVENT_P
 - [ ] **Step 5: Run focused and package checks**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence lint
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence typecheck
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence build
+pnpm --filter @proofline/playwright-evidence test
+pnpm --filter @proofline/playwright-evidence lint
+pnpm --filter @proofline/playwright-evidence typecheck
+pnpm --filter @proofline/playwright-evidence build
 ```
 
 Expected: all pass; no test needs network access.
@@ -389,21 +404,114 @@ git commit -m "feat: add bounded evidence primitives"
 
 ---
 
+### Task 3½: Deliver the Smallest End-to-End Evidence Slice
+
+This is the 30-hour review boundary. It must leave one truthful workflow operating through the real domain functions and action dispatcher; it is not throwaway prototype code. Keep the implementation deliberately narrow, then broaden the same modules in Tasks 4–8.
+
+**Files:**
+
+- Modify: `pnpm-workspace.yaml`
+- Modify: `turbo.json`
+- Create: `packages/playwright-evidence/src/playwright-json.ts`
+- Create: `packages/playwright-evidence/src/identity.ts`
+- Create: `packages/playwright-evidence/src/selection.ts`
+- Create: `packages/playwright-evidence/src/outcomes.ts`
+- Create: `packages/playwright-evidence/src/plan.ts`
+- Create: `packages/playwright-evidence/src/collect.ts`
+- Create: `packages/playwright-evidence/src/reconcile.ts`
+- Modify: `packages/playwright-evidence/src/index.ts`
+- Create: `check/package.json`
+- Create: `check/tsconfig.json`
+- Create: `check/src/inputs.ts`
+- Create: `check/src/main.ts`
+- Create: `check/src/thin-slice.e2e.test.ts`
+- Create: `packages/test-fixtures/fixtures/playwright-basic/playwright.config.ts`
+- Create: `packages/test-fixtures/fixtures/playwright-basic/tests/outcomes.spec.ts`
+
+**Interfaces:**
+
+- Consumes: Task 2 schemas and Task 3 safety primitives.
+- Produces: production-shaped `plan`, `collect`, and `reconcile` functions for one producer named `e2e` with one shard; an injected `ActionsPort` dispatcher; executable coverage for scenarios 1, 3, 6, 8, 10, 20, and 21.
+- Defers: multiple producers/shards, every remaining outcome, bounded summary formatting, bundle generation, and live GitHub jobs.
+
+- [ ] **Step 1: Write one RED vertical test before domain implementation**
+
+Add `check` to `pnpm-workspace.yaml` before running the filter. The test creates a temporary copy of `playwright-basic`, invokes the locally resolved Playwright CLI, and drives the same dispatcher methods that the bundled action will call. It must not hand-author a successful report. Assert:
+
+```ts
+expect(await runSlice({ scenario: 'pass' })).toMatchObject({
+  status: 'complete',
+  counts: { plannedActive: 1, executedAsExpected: 1 },
+});
+expect(await runSlice({ scenario: 'absent' })).toMatchObject({
+  status: 'evidence_gaps',
+  counts: { absent: 1 },
+});
+```
+
+Run:
+
+```bash
+node --version
+pnpm --filter @proofline/check test -- src/thin-slice.e2e.test.ts
+```
+
+Expected: FAIL because the vertical operations and dispatcher do not exist.
+
+- [ ] **Step 2: Implement the narrow production path**
+
+Implement only `e2e=1`, but use the final schemas, identity key, atomic files, local CLI resolution, `spawn(shell: false)`, report digest, and manifest-first ordering. The dispatcher receives an injected `ActionsPort`; it must call real domain functions and never return canned evidence. Keep each module extensible by data, not by placeholder branches.
+
+- [ ] **Step 3: Add the remaining first-slice scenarios**
+
+Within the same isolated fixture file, add:
+
+- a missing producer artifact for scenario 3, which yields producer-level `no_evidence` without invented identities;
+- an active planned identity removed from an otherwise valid report for scenario 6, which yields `absent`;
+- a body-level conditional skip for scenario 8, which yields `runtime_skipped`;
+- a fail-then-pass retry for scenario 10, which yields `retry_masked`;
+- Chromium planning versus Firefox execution for scenario 20, which writes the mismatch envelope before returning a tool error;
+- a list report whose raw statuses are all skipped but whose `expectedStatus` values preserve the active/disabled split for scenario 21.
+
+Use `playwright-args` as one token per non-empty line. The negative parser test must assert that `--project chromium` on one line fails with: `one argument per line; use --project=chromium`.
+
+- [ ] **Step 4: Demonstrate the slice against the repository example**
+
+Run:
+
+```bash
+node --version
+pnpm --filter @proofline/check test -- src/thin-slice.e2e.test.ts
+pnpm --filter @proofline/playwright-evidence test
+pnpm turbo run lint typecheck build test --force
+```
+
+Record the seven scenario results and elapsed implementation time in the commit body. Stop for scope review if this boundary exceeds 30 focused hours; do not weaken a classification to fit the checkpoint.
+
+- [ ] **Step 5: Commit the working vertical slice**
+
+```bash
+git add pnpm-workspace.yaml turbo.json packages/playwright-evidence check packages/test-fixtures/fixtures/playwright-basic
+git commit -m "feat: deliver vertical completeness slice"
+```
+
+---
+
 ### Task 4: Capture and Normalize Per-Shard Playwright Plans
 
 **Files:**
 
-- Create: `packages/playwright-evidence/src/playwright-json.ts`
+- Modify: `packages/playwright-evidence/src/playwright-json.ts`
 - Create: `packages/playwright-evidence/src/playwright-json.test.ts`
-- Create: `packages/playwright-evidence/src/identity.ts`
+- Modify: `packages/playwright-evidence/src/identity.ts`
 - Create: `packages/playwright-evidence/src/identity.test.ts`
-- Create: `packages/playwright-evidence/src/selection.ts`
+- Modify: `packages/playwright-evidence/src/selection.ts`
 - Create: `packages/playwright-evidence/src/selection.test.ts`
-- Create: `packages/playwright-evidence/src/plan.ts`
+- Modify: `packages/playwright-evidence/src/plan.ts`
 - Create: `packages/playwright-evidence/src/plan.test.ts`
 - Modify: `packages/playwright-evidence/src/index.ts`
-- Create: `packages/test-fixtures/fixtures/playwright-basic/playwright.config.ts`
-- Create: `packages/test-fixtures/fixtures/playwright-basic/tests/outcomes.spec.ts`
+- Modify: `packages/test-fixtures/fixtures/playwright-basic/playwright.config.ts`
+- Modify: `packages/test-fixtures/fixtures/playwright-basic/tests/outcomes.spec.ts`
 
 **Interfaces:**
 
@@ -441,14 +549,14 @@ For repeat-each, assert two source-identical entries have different Playwright I
 - [ ] **Step 3: Run tests and confirm RED**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test -- src/playwright-json.test.ts src/identity.test.ts src/selection.test.ts src/plan.test.ts
+pnpm --filter @proofline/playwright-evidence test -- src/playwright-json.test.ts src/identity.test.ts src/selection.test.ts src/plan.test.ts
 ```
 
-Expected: FAIL because normalization and plan creation do not exist.
+Expected: FAIL because the thin slice does not yet cover multi-project/shard, repeat-each, collision, and strict-shape cases.
 
 - [ ] **Step 4: Implement strict Playwright normalization**
 
-Walk nested suites and specs. Use the spec's built-in `id`, plus each contained test's `projectName` and `expectedStatus`. Build title paths from nested suite titles plus spec title. Reject missing IDs, unknown expected statuses, duplicate `[projectName,id]`, path escapes, and incompatible `config.version`. Sort by identity key.
+Walk nested suites and specs. Use the spec's built-in `id`, plus each contained test's `projectName` and `expectedStatus`. Build title paths from nested suite titles plus spec title. Require `spec.id`, `expectedStatus`, `projectName`, `results[].status`, `config.shard`, `config.argv`, `config.configFile`, and `config.rootDir`, but do not confuse structural validation with semantic compatibility. Reject missing fields, unknown statuses, duplicate `[projectName,id]`, path escapes, and versions outside the explicitly tested 1.62.x range. Sort by identity key.
 
 Do not compare serialized regex bodies or infer selected projects from `config.projects`. Normalize repository-relative config/root paths and canonical CLI selectors.
 
@@ -485,10 +593,10 @@ Run plan against a temporary consumer without `node_modules`, with `HTTPS_PROXY`
 - [ ] **Step 7: Run package verification and commit**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence lint
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence typecheck
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence build
+pnpm --filter @proofline/playwright-evidence test
+pnpm --filter @proofline/playwright-evidence lint
+pnpm --filter @proofline/playwright-evidence typecheck
+pnpm --filter @proofline/playwright-evidence build
 git add packages/playwright-evidence packages/test-fixtures/fixtures/playwright-basic
 git commit -m "feat: capture Playwright plan fragments"
 ```
@@ -499,9 +607,9 @@ git commit -m "feat: capture Playwright plan fragments"
 
 **Files:**
 
-- Create: `packages/playwright-evidence/src/outcomes.ts`
+- Modify: `packages/playwright-evidence/src/outcomes.ts`
 - Create: `packages/playwright-evidence/src/outcomes.test.ts`
-- Create: `packages/playwright-evidence/src/collect.ts`
+- Modify: `packages/playwright-evidence/src/collect.ts`
 - Create: `packages/playwright-evidence/src/collect.test.ts`
 - Modify: `packages/playwright-evidence/src/playwright-json.ts`
 - Modify: `packages/playwright-evidence/src/index.ts`
@@ -510,11 +618,11 @@ git commit -m "feat: capture Playwright plan fragments"
 **Interfaces:**
 
 - Consumes: `PlanArtifact`, Playwright JSON parser, selection descriptor/diff, bounded I/O.
-- Produces: normalized observed test records and `collectEvidence(options): Promise<ResultEnvelope>`; `deriveObservedOutcome(test)` returning `executed_as_expected | retry_masked | failed | runtime_skipped | incomplete`.
+- Produces: broadened normalized observed records and `collectEvidence(options): Promise<ResultEnvelope>`; `deriveObservedOutcome(test, reportContext)` returning `executed_as_expected | retry_masked | failed | runtime_skipped | incomplete`, including report-wide interruption context.
 
 - [ ] **Step 1: Generate result fixtures through Playwright**
 
-Create non-browser tests for pass, declared `test.fail`, unexpected pass under `test.fail`, terminal failure, timeout, runtime body skip, static skip, and retry pass. Generate JSON with Playwright rather than hand-authoring it. Create a partial static fixture by truncating only after first confirming whether SIGINT produced readable JSON; document the observed branch in the test name.
+Create non-browser tests for pass, declared `test.fail`, unexpected pass under `test.fail`, terminal failure, timeout, runtime body skip, static skip, retry pass, and SIGINT. Generate JSON with Playwright rather than hand-authoring it. The SIGINT harness must place a genuine runtime skip before a long-running test and an active never-started test after it. Preserve the resulting report as a sanitized fixture and document whether Playwright emitted an interrupted attempt, zero attempts, or an unreadable artifact.
 
 - [ ] **Step 2: Write the failing outcome table**
 
@@ -534,6 +642,8 @@ it.each([
 });
 ```
 
+Add a report-context test: when any result is `interrupted`, an active planned test with zero attempts is `incomplete`, not `absent`; an observed skipped result remains `runtime_skipped`. This conservative rule must not relabel a runtime skip that completed before SIGINT.
+
 - [ ] **Step 3: Write drift and envelope tests**
 
 Plan Chromium and execute Firefox; expect `selection_mismatch` naming `cli --project`. Test mismatch for shard, config path, root path, Playwright version, grep, and positional filters. Test that reporter differences alone do not mismatch. Test digest mismatch. For a missing plan with a valid report, expect an envelope with `planDigest: 'missing'` and `selectionCheck: { status: 'unavailable', reason: 'plan_missing' }`.
@@ -541,10 +651,10 @@ Plan Chromium and execute Firefox; expect `selection_mismatch` naming `cli --pro
 - [ ] **Step 4: Run and confirm RED**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test -- src/outcomes.test.ts src/collect.test.ts
+pnpm --filter @proofline/playwright-evidence test -- src/outcomes.test.ts src/collect.test.ts
 ```
 
-Expected: FAIL because result collection is absent.
+Expected: FAIL because the thin slice does not yet cover the full outcome, digest, drift, and interruption matrix.
 
 - [ ] **Step 5: Implement minimal collection**
 
@@ -553,10 +663,10 @@ Parse the report under Task 3 bounds, normalize every test using Task 4 identiti
 - [ ] **Step 6: Verify and commit**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence lint
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence typecheck
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence build
+pnpm --filter @proofline/playwright-evidence test
+pnpm --filter @proofline/playwright-evidence lint
+pnpm --filter @proofline/playwright-evidence typecheck
+pnpm --filter @proofline/playwright-evidence build
 git add packages/playwright-evidence packages/test-fixtures/fixtures/playwright-results
 git commit -m "feat: collect Playwright execution evidence"
 ```
@@ -569,7 +679,7 @@ git commit -m "feat: collect Playwright execution evidence"
 
 - Create: `packages/playwright-evidence/src/manifest.ts`
 - Create: `packages/playwright-evidence/src/manifest.test.ts`
-- Create: `packages/playwright-evidence/src/reconcile.ts`
+- Modify: `packages/playwright-evidence/src/reconcile.ts`
 - Create: `packages/playwright-evidence/src/reconcile.test.ts`
 - Create: `packages/playwright-evidence/src/summary.ts`
 - Create: `packages/playwright-evidence/src/summary.test.ts`
@@ -618,10 +728,10 @@ Assert a complete summary has exactly three non-empty lines. Assert detailed sum
 - [ ] **Step 4: Run and confirm RED**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test -- src/manifest.test.ts src/reconcile.test.ts src/summary.test.ts
+pnpm --filter @proofline/playwright-evidence test -- src/manifest.test.ts src/reconcile.test.ts src/summary.test.ts
 ```
 
-Expected: FAIL because reconciliation is absent.
+Expected: FAIL because the thin slice does not yet cover general manifests, multiple shards, bounded summaries, and the full classification matrix.
 
 - [ ] **Step 5: Implement manifest-first reconciliation**
 
@@ -632,10 +742,10 @@ Always create a valid diagnostic `ReconciliationReport`, including `tool_error`,
 - [ ] **Step 6: Verify and commit**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence lint
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence typecheck
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence build
+pnpm --filter @proofline/playwright-evidence test
+pnpm --filter @proofline/playwright-evidence lint
+pnpm --filter @proofline/playwright-evidence typecheck
+pnpm --filter @proofline/playwright-evidence build
 git add packages/playwright-evidence packages/test-fixtures/fixtures/reconciliation
 git commit -m "feat: reconcile planned and observed evidence"
 ```
@@ -650,15 +760,16 @@ git commit -m "feat: reconcile planned and observed evidence"
 - Modify: `eslint.config.js`
 - Modify: `turbo.json`
 - Modify: `package.json`
-- Create: `check/package.json`
-- Create: `check/tsconfig.json`
-- Create: `check/src/inputs.ts`
+- Modify: `.gitignore`
+- Modify: `check/package.json`
+- Modify: `check/tsconfig.json`
+- Create: `check/tsconfig.bundle.json`
+- Modify: `check/src/inputs.ts`
 - Create: `check/src/inputs.test.ts`
-- Create: `check/src/main.ts`
+- Modify: `check/src/main.ts`
 - Create: `check/src/main.test.ts`
 - Create: `check/action.yml`
 - Generate: `check/dist/index.js`
-- Generate: `check/dist/sourcemap-register.cjs` if produced by the pinned bundler
 
 **Interfaces:**
 
@@ -667,7 +778,7 @@ git commit -m "feat: reconcile planned and observed evidence"
 
 - [ ] **Step 1: Write input-contract tests**
 
-First add `check` to `pnpm-workspace.yaml`, create its package/tsconfig with the listed dependencies and scripts, and create test files importing not-yet-implemented modules so the filtered test command fails for the intended reason. Inject an adapter instead of mutating real action environment in tests:
+Extend the thin-slice `check` workspace package with the complete dependencies and scripts, then create tests for the not-yet-supported public contract so the filtered command fails for the intended reason. Inject an adapter instead of mutating real action environment in tests:
 
 ```ts
 export interface ActionsPort {
@@ -687,16 +798,18 @@ Mock core ports and operation functions. Assert each operation calls exactly one
 Run:
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/check test
+pnpm --filter @proofline/check test
 ```
 
-Expected: FAIL because the action package is absent.
+Expected: FAIL because the thin-slice dispatcher does not yet implement the complete public input/output contract.
 
 - [ ] **Step 3: Implement the thin adapter**
 
 Keep `main.ts` under 200 lines. Convert action inputs to domain options, call the selected operation, write outputs through `@actions/core`, and append summary only in reconcile when enabled. Catch only at the top-level boundary; preserve stable reason codes and redact payloads.
 
 Use `runs.using: node24` and `runs.main: dist/index.js` in `action.yml`. Document every input/output from the spec with exact defaults.
+
+For `playwright-args`, say exactly: `One argument per non-empty line; use --project=chromium, not --project chromium on one line.` The parser returns the same text for the invalid one-line form.
 
 - [ ] **Step 4: Configure reproducible bundling**
 
@@ -705,7 +818,8 @@ Add scripts:
 ```json
 {
   "build": "pnpm bundle",
-  "bundle": "ncc build src/main.ts -o dist --minify --source-map",
+  "bundle:input": "tsc -p tsconfig.bundle.json",
+  "bundle": "pnpm bundle:input && ncc build lib/main.js -o dist --minify",
   "bundle:check": "pnpm bundle && git diff --exit-code -- dist",
   "lint": "eslint src --max-warnings 0",
   "test": "vitest run",
@@ -713,27 +827,26 @@ Add scripts:
 }
 ```
 
-Update the root build/check graph so source checks precede bundle verification. Ensure `check/dist/**` is tracked and no other `dist` directory is accidentally added.
+`tsconfig.bundle.json` emits JavaScript without source maps into ignored `check/lib/`; add `/check/lib/` to `.gitignore`. ncc bundles that JavaScript, not TypeScript. This avoids coupling ncc's loader to the repository's TypeScript major and avoids absolute paths in committed source maps. Update the root build/check graph so source checks precede bundle verification. Ensure `check/dist/**` is tracked and no other `dist` directory is accidentally added.
 
 - [ ] **Step 5: Run action package verification**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm install --frozen-lockfile
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/check lint
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/check typecheck
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/check test
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/check bundle
+pnpm install --frozen-lockfile
+pnpm --filter @proofline/check lint
+pnpm --filter @proofline/check typecheck
+pnpm --filter @proofline/check test
+pnpm --filter @proofline/check bundle
 shasum -a 256 check/dist/index.js
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/check bundle
-shasum -a 256 check/dist/index.js
+pnpm --filter @proofline/check bundle:check
 ```
 
-Expected: all checks pass and both printed bundle hashes are identical. After the bundle is committed, CI's `bundle:check` enforces `git diff --exit-code -- dist`.
+Expected: all checks pass. The hash records the candidate artifact; after the bundle is committed, Task 9's clean Linux CI rebuild and `bundle:check` are the cross-environment reproducibility proof. A same-machine double hash alone is not accepted as that proof.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add pnpm-workspace.yaml pnpm-lock.yaml eslint.config.js turbo.json package.json check
+git add pnpm-workspace.yaml pnpm-lock.yaml eslint.config.js turbo.json package.json .gitignore check
 git commit -m "feat: expose Proofline GitHub action"
 ```
 
@@ -754,6 +867,7 @@ git commit -m "feat: expose Proofline GitHub action"
 - Remove after migration: `packages/playwright-reporter/src/reporter.ts`
 - Remove after migration: `packages/playwright-reporter/src/reporter.e2e.test.ts`
 - Remove after migration: `packages/playwright-reporter/src/index.ts`
+- Modify: `docs/decisions/0001-playwright-discovery.md`
 
 **Interfaces:**
 
@@ -801,11 +915,13 @@ expect(JSON.stringify(consumerPackage)).not.toContain('@proofline/');
 
 After all action E2E tests pass, remove reporter implementation and demo dependency. If `packages/playwright-reporter` has no remaining reusable source, remove the package and workspace references entirely. Move only reusable identity/atomic-write tests to their new owning packages; do not keep compatibility wrappers for an unpublished package.
 
+Set ADR 0001 to `Status: SUPERSEDED by 0002`; retain its historical rationale instead of silently leaving an obsolete decision marked active.
+
 - [ ] **Step 6: Run E2E and full checks**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/playwright-evidence test -- src/subprocess.e2e.test.ts
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm check
+pnpm --filter @proofline/playwright-evidence test -- src/subprocess.e2e.test.ts
+pnpm check
 ```
 
 Expected: every isolated scenario passes; no Proofline package appears in the consumer fixture; current reporter references are absent from README/examples.
@@ -813,7 +929,7 @@ Expected: every isolated scenario passes; no Proofline package appears in the co
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages examples pnpm-lock.yaml pnpm-workspace.yaml turbo.json
+git add packages examples docs/decisions/0001-playwright-discovery.md pnpm-lock.yaml pnpm-workspace.yaml turbo.json
 git commit -m "test: prove Playwright evidence workflows"
 ```
 
@@ -849,14 +965,14 @@ Create deterministic jobs:
 
 - `skipped-producer` with `if: false` and manifest expectation;
 - `missing-upload` with one declared shard intentionally omitting upload;
-- `interrupted-run` sending SIGINT to the owned Playwright child;
+- `interrupted-run` reusing Task 8's subprocess harness to send SIGINT to the owned Playwright child; this job must not invent a second signal-management implementation;
 - `selection-mismatch` planning Chromium and executing Firefox.
 
 Each reconciliation runs in `report-only` where a product gap is expected and asserts JSON with a Node one-liner. Tool-error scenarios use `continue-on-error: true` only on the Proofline step, then assert its `outcome == 'failure'` and inspect the diagnostic report. These jobs are tests of Proofline and must not become release evidence for market validation.
 
 - [ ] **Step 4: Add bundle and Node gates**
 
-CI matrix runs Node 22/24 with cache bypass. Add a Node 20 negative job that executes `node check/dist/index.js` directly under setup-node 20 with minimal input environment and asserts the exact unsupported-runtime message; using the action through `uses:` would run GitHub's declared Node 24 action runtime and would not test this guard. Add `pnpm --filter @proofline/check bundle:check` and a clean-clone smoke job.
+CI matrix runs Node 22/24 with cache bypass. Add a Node 20 negative job that executes `node check/dist/index.js` directly under setup-node 20 with minimal input environment and asserts the exact unsupported-runtime message; using the action through `uses:` would run GitHub's declared Node 24 action runtime and would not test this guard. Add `pnpm --filter @proofline/check bundle:check` in a clean Linux checkout; this rebuild-versus-committed diff is the cross-environment bundle reproducibility gate.
 
 - [ ] **Step 5: Document security and dependency notices**
 
@@ -867,7 +983,7 @@ CI matrix runs Node 22/24 with cache bypass. Add a Node 20 negative job that exe
 ```bash
 pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/proofline-self-test.yml examples/consumer-workflow.yml README.md SECURITY.md THIRD_PARTY_NOTICES.md
 rg -n 'uses: [^#]+@(main|master|v[0-9]+)$' .github examples/consumer-workflow.yml
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm check
+pnpm check
 ```
 
 Expected: formatting passes; the unpinned-action search returns no results; full check passes.
@@ -914,7 +1030,7 @@ interview_id,team_alias,booked_at,conducted_at,qualified,role,playwright_github_
 observation_id,team_alias,repository_alias,pr_alias,observed_at,disease_signal,proofline_status,classification,previously_unknown,customer_confirmed,false_positive,resolved_at,evidence_url
 ```
 
-Add a TypeScript validation script under `packages/test-fixtures/scripts/validate-pilot-data.mjs` that rejects duplicate IDs, raw repository names, invalid booleans, mutable timestamps, and missing confirmation evidence.
+Add a dependency-free Node ESM validation script under `packages/test-fixtures/scripts/validate-pilot-data.mjs` that rejects duplicate IDs, raw repository names, invalid booleans, mutable timestamps, and missing confirmation evidence. Keep `.mjs` consciously for consistency with existing repository maintenance scripts; typed production and evidence-domain code remains TypeScript.
 
 - [ ] **Step 2: Replace the gate text exactly from the spec**
 
@@ -931,9 +1047,13 @@ Roadmap stages are `v0.1 local completeness`, `30-day pilot`, and `hosted-histor
 - [ ] **Step 5: Run final repository verification**
 
 ```bash
-PATH=/Users/ankora/.nvm/versions/node/v22.22.2/bin:$PATH pnpm turbo run lint typecheck build test --force
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm turbo run lint typecheck build test --force
-PATH=/Users/ankora/.nvm/versions/node/v24.20.0/bin:$PATH pnpm --filter @proofline/check bundle:check
+# Activate Node 22 with the environment's version manager.
+node --version # expect v22.x
+pnpm turbo run lint typecheck build test --force
+# Activate Node 24 with the environment's version manager.
+node --version # expect v24.x
+pnpm turbo run lint typecheck build test --force
+pnpm --filter @proofline/check bundle:check
 node packages/test-fixtures/scripts/validate-pilot-data.mjs
 git diff --check origin/main...HEAD
 git status --short

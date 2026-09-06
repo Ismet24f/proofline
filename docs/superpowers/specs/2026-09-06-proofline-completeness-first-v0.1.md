@@ -7,7 +7,7 @@
 - **Product stage:** open-source pilot
 - **Surface:** one bundled GitHub Action for Playwright on GitHub Actions
 - **License:** Apache-2.0
-- **Verified against:** Playwright 1.62.1 (`--list --shard=N/T --reporter=json` honours the shard and exposes `config.argv`, `config.shard`, `config.grep`, `config.projects`, stable same-revision `spec.id`, and per-test `expectedStatus`, `line`, `column`, `projectName`)
+- **Verified against:** Playwright 1.62.1 (`--list --shard=N/T --reporter=json` honours the shard and exposes `config.argv`, `config.shard`, `config.grep`, `config.projects`, stable same-revision `spec.id`, and per-test `expectedStatus`, `line`, `column`, `projectName`; a SIGINT report contains an `interrupted` in-flight result and zero attempts for active tests that never started)
 
 ---
 
@@ -284,7 +284,7 @@ Revision must be a full lowercase 40-hex SHA. Branch names are never accepted.
 
 Arguments appear twice in the consumer YAML (plan and execution). Drift is therefore **detected, not prevented**. `collect` compares a canonical selection descriptor derived from the fragment and report. It includes `shard`, repository-relative `configFile` and `rootDir`, Playwright version, positional test filters, and normalized CLI selection flags such as `--project`, `--grep`, and `--grep-invert`. Configured `config.projects` and serialized regex objects are recorded for diagnostics but are not used as evidence of the selected projects or regex patterns. Any difference is a **`selection_mismatch` tool error** in `collect` and again in `reconcile`, naming each differing field with planned vs actual values. Raw `config.argv` is retained for diagnosis; action-owned differences such as `--list` and reporter-output flags are removed before comparison.
 
-`playwright-args` is tokenized into an argument array and passed to `spawn` with `shell: false`; it is never interpolated into a shell command. v0.1 accepts only documented selection-affecting arguments and positional test filters. Action-owned `--list`, `--reporter`, `--shard`, and `--config` flags are rejected in `playwright-args` because those have dedicated inputs or fixed behavior.
+`playwright-args` is tokenized into an argument array and passed to `spawn` with `shell: false`; it is never interpolated into a shell command. Each non-empty line is exactly one argument, so multi-value options use one-token forms such as `--project=chromium`, not `--project chromium` on one line. v0.1 accepts only documented selection-affecting arguments and positional test filters. Action-owned `--list`, `--reporter`, `--shard`, and `--config` flags are rejected in `playwright-args` because those have dedicated inputs or fixed behavior.
 
 ### 8.5 Selection modes
 
@@ -308,6 +308,7 @@ For every manifest producer/shard, reconciliation requires one valid fragment an
 
 Within one immutable revision and run only. Canonical key: `[projectName, playwrightTestId]`, where `playwrightTestId` is the built-in JSON `spec.id`.
 
+- In verified 1.62.1 output, `spec.id` already differs by project. `projectName` remains in the key as an explicit partition and defence-in-depth consistency check; Proofline does not claim it is required for ID uniqueness.
 - Test paths are POSIX and relative to the recorded `rootDir`; `rootDir` is stored repository-relative. Both roots and resolved files are rejected if they escape the workspace.
 - Unnamed project → reserved `<default>`; a real project may not use that name.
 - `titlePath`, path, line, and column are retained for display and must agree between plan and result for the same key.
@@ -321,19 +322,19 @@ Within one immutable revision and run only. Canonical key: `[projectName, playwr
 
 Raw `status` is insufficient: `test.fail()` makes a failing result _expected_, and a runtime `test.skip()` looks like a planned skip. Classification combines the plan's `expectedStatus` with per-attempt statuses and the derived outcome (`expected`, `unexpected`, `flaky`, `skipped`).
 
-| Classification         | Derivation                                                                           | Evidence gap                    |
-| ---------------------- | ------------------------------------------------------------------------------------ | ------------------------------- |
-| `executed_as_expected` | outcome `expected`, single attempt (includes `test.fail()` that failed as declared)  | no                              |
-| `retry_masked`         | outcome `flaky`                                                                      | no — reported separately        |
-| `failed`               | outcome `unexpected` (includes timeouts, and `test.fail()` that unexpectedly passed) | no — the test job already fails |
-| `runtime_skipped`      | plan `expectedStatus ≠ skipped`, result status `skipped`                             | **yes**                         |
-| `incomplete`           | attempts exist, none terminal (`interrupted`, truncated report)                      | **yes**                         |
-| `absent`               | in fragment, not in the matching valid report                                        | **yes**                         |
-| `no_evidence`          | producer/shard failed §9.1; known planned tests may inherit it                       | **yes**                         |
+| Classification         | Derivation                                                                                                                     | Evidence gap                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `executed_as_expected` | outcome `expected`, single attempt (includes `test.fail()` that failed as declared)                                            | no                              |
+| `retry_masked`         | outcome `flaky`                                                                                                                | no — reported separately        |
+| `failed`               | outcome `unexpected` (includes timeouts, and `test.fail()` that unexpectedly passed)                                           | no — the test job already fails |
+| `runtime_skipped`      | plan `expectedStatus ≠ skipped`, result status `skipped`                                                                       | **yes**                         |
+| `incomplete`           | an attempt is `interrupted`, or the same report contains an interrupted attempt and this active planned test has zero attempts | **yes**                         |
+| `absent`               | in fragment, not in the matching valid report                                                                                  | **yes**                         |
+| `no_evidence`          | producer/shard failed §9.1; known planned tests may inherit it                                                                 | **yes**                         |
 
 Non-primary: `planned_disabled`, `unexpected`, `duplicate`, `invalid`.
 
-Precedence: `no_evidence` → `invalid` → `incomplete` → outcome evaluation. Retry history is evaluated only when all attempts are valid and a terminal result exists. `retry_masked` is never merged into _not executed_.
+Precedence: `no_evidence` → `invalid` → report-wide interruption context → outcome evaluation. If any result in a valid report is `interrupted`, every active planned test in that report with zero attempts is `incomplete`, not `absent`; an observed `skipped` result remains `runtime_skipped` because it is execution evidence and may have completed before the signal. This deliberately avoids converting a genuine runtime skip into an interruption guess. Retry history is evaluated only when all attempts are valid and a terminal result exists. `retry_masked` is never merged into _not executed_.
 
 ---
 
@@ -415,7 +416,7 @@ Unit tests for parsers and schemas are necessary and insufficient. Playwright be
 9. `test.fail()` failing as declared → `executed_as_expected`; `test.fail()` unexpectedly passing → `failed`.
 10. First-attempt pass vs retry pass → `executed_as_expected` vs `retry_masked`.
 11. Terminal failure and timeout → `failed`, never a completeness gap.
-12. `SIGINT` mid-run with partial report → `incomplete` or `no_evidence` per artifact state.
+12. `SIGINT` mid-run with partial report → the interrupted attempt and active planned tests with zero attempts are `incomplete`; already-observed runtime skips remain `runtime_skipped`; an unreadable/missing artifact is `no_evidence`.
 13. Unexpected and duplicate identities detected.
 14. Malformed, oversized, mismatched-revision, digest-invalid artifacts → tool error.
 15. Same inputs → deterministic record ordering and identities after excluding truthful timestamps and run-specific digests.
@@ -500,23 +501,24 @@ The next independent review runs only after executable CI evidence exists (Phase
 
 ## 21. Risks
 
-| Risk                                     | Mitigation                                                              |
-| ---------------------------------------- | ----------------------------------------------------------------------- |
-| "Planned" read as "should have run"      | Vocabulary rule; no oracle mode exists                                  |
-| "We already have a rollup job"           | §2 table incl. job-vs-workflow distinction; disease-signal preflight    |
-| Plan/execution argument drift            | Detected by resolved-config comparison (§8.4); tool error, never silent |
-| Skipped job's tests cannot be named      | Stated in summary and README (§6.2); non-goal to solve in v0.1          |
-| Missing shard hidden by surviving shards | Manifest completeness before identity reconciliation                    |
-| `test.fail`/runtime skip misclassified   | Outcome semantics; fixtures 7–9                                         |
-| List-mode `status` misused               | `expectedStatus`-only invariant; fixture 21                             |
-| `npx` breaks no-network promise          | `require.resolve` + `spawn(shell:false)`; fixture 22                    |
-| Stale action versions in examples        | A6 verifies majors and pins SHAs at implementation time                 |
-| Summary noise on green PRs               | Three-line clean summary; gate row 9                                    |
-| Playwright JSON shape changes            | Supported range pinned; unknown shape → tool error                      |
-| Scope creep                              | 30-hour checkpoint with feature-only cut list                           |
-| Planning overhead delays code            | Plan doc time-boxed to 4 hours                                          |
-| Pilot repos have no disease              | Preflight qualification                                                 |
-| Sensitive test names                     | No upload; retention guidance                                           |
+| Risk                                      | Mitigation                                                                                                                   |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| "Planned" read as "should have run"       | Vocabulary rule; no oracle mode exists                                                                                       |
+| "We already have a rollup job"            | §2 table incl. job-vs-workflow distinction; disease-signal preflight                                                         |
+| Plan/execution argument drift             | Detected by resolved-config comparison (§8.4); tool error, never silent                                                      |
+| Skipped job's tests cannot be named       | Stated in summary and README (§6.2); non-goal to solve in v0.1                                                               |
+| Missing shard hidden by surviving shards  | Manifest completeness before identity reconciliation                                                                         |
+| `test.fail`/runtime skip misclassified    | Outcome semantics; fixtures 7–9                                                                                              |
+| List-mode `status` misused                | `expectedStatus`-only invariant; fixture 21                                                                                  |
+| `npx` breaks no-network promise           | `require.resolve` + `spawn(shell:false)`; fixture 22                                                                         |
+| Stale action versions in examples         | A6 verifies majors and pins SHAs at implementation time                                                                      |
+| Summary noise on green PRs                | Three-line clean summary; gate row 9                                                                                         |
+| Playwright JSON shape changes             | Supported range pinned; unknown shape → tool error                                                                           |
+| Interrupted run hides never-started tests | Report-wide interruption context turns zero-attempt active tests into `incomplete` without relabeling observed runtime skips |
+| Scope creep                               | 30-hour checkpoint with feature-only cut list                                                                                |
+| Planning overhead delays code             | Plan doc time-boxed to 4 hours                                                                                               |
+| Pilot repos have no disease               | Preflight qualification                                                                                                      |
+| Sensitive test names                      | No upload; retention guidance                                                                                                |
 
 ---
 
