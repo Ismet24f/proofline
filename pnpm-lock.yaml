@@ -60,9 +60,6 @@ importers:
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
-      '@proofline/playwright-reporter':
-        specifier: workspace:*
-        version: link:../../packages/playwright-reporter
 
   packages/evidence-model:
     dependencies:
@@ -76,24 +73,21 @@ importers:
         specifier: workspace:*
         version: link:../evidence-model
     devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.3
-
-  packages/playwright-reporter:
-    dependencies:
-      '@proofline/evidence-model':
-        specifier: workspace:*
-        version: link:../evidence-model
-    devDependencies:
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
+      '@proofline/test-fixtures':
+        specifier: workspace:*
+        version: link:../test-fixtures
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
 
-  packages/test-fixtures: {}
+  packages/test-fixtures:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
 
 packages:
 

@@ -1,6 +1,6 @@
 # ADR 0001: Playwright discovery through the reporter contract
 
-**Status:** ACCEPTED
+**Status:** SUPERSEDED by ADR 0002
 **Date:** 2026-09-01
 
 ## Context
@@ -103,3 +103,9 @@ The reporter contract is acceptable for Phase 0 because the accepted command
 proves all required metadata and failure behavior against the installed
 Playwright version. Revalidate this ADR when upgrading Playwright or changing
 the reporter lifecycle contract.
+
+ADR 0002 replaced this unpublished reporter installation path with
+completeness-first planning and result reconciliation. This document remains as
+historical rationale for the original experiment; the reporter package and demo
+dependency were removed after the replacement action passed its real Playwright
+and isolated-consumer scenario matrix.

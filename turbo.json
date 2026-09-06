@@ -9,7 +9,6 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
-    "@proofline/check#test": { "dependsOn": ["build", "^build"] },
-    "@proofline/playwright-reporter#test": { "dependsOn": ["build", "^build"] }
+    "@proofline/check#test": { "dependsOn": ["build", "^build"] }
   }
 }
