@@ -4,6 +4,7 @@ node_modules/
 dist/
 !check/dist/
 !check/dist/**
+/check/lib/
 coverage/
 test-results/
 **/.proofline/inventory.json

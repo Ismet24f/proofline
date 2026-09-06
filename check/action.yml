@@ -1,0 +1,81 @@
+name: Proofline Check
+description: Detect missing Playwright execution evidence before release decisions.
+author: Proofline
+
+inputs:
+  operation:
+    description: One of plan, collect, or reconcile.
+    required: true
+  producer:
+    description: Producer ID used by plan and collect.
+    required: false
+  shard:
+    description: Producer shard as N/T.
+    required: false
+    default: 1/1
+  playwright-args:
+    description: One argument per non-empty line; use --project=chromium, not --project chromium on one line.
+    required: false
+  config:
+    description: Repository-relative Playwright configuration path for plan.
+    required: false
+  repository:
+    description: Optional owner/repository override for plan.
+    required: false
+  revision:
+    description: Optional full lowercase 40-character revision override for plan.
+    required: false
+  report:
+    description: Repository-relative Playwright JSON report path for collect.
+    required: false
+  plan:
+    description: Repository-relative plan artifact path for collect.
+    required: false
+    default: proofline/plan.json
+  producers:
+    description: Expected producer manifest such as e2e=3,api=1 for reconcile.
+    required: false
+  artifacts:
+    description: Repository-relative downloaded artifact directory for reconcile.
+    required: false
+  mode:
+    description: Reconciliation mode, report-only or enforce-evidence.
+    required: false
+    default: report-only
+  out:
+    description: Repository-relative output path; defaults depend on the operation.
+    required: false
+  summary:
+    description: Write the reconciliation result to the GitHub step summary.
+    required: false
+    default: 'true'
+
+outputs:
+  status:
+    description: Reconciliation status.
+  planned-active:
+    description: Number of active planned tests.
+  producer-gaps:
+    description: Number of producer scopes without trustworthy evidence.
+  known-test-gaps:
+    description: Number of known planned tests with evidence gaps.
+  not-executed:
+    description: Number of known planned tests not conclusively executed.
+  retry-masked:
+    description: Number of tests that passed only after retry.
+  failed:
+    description: Number of terminal Playwright failures.
+  unexpected:
+    description: Number of observed identities absent from the plan.
+  selection-mismatch:
+    description: Whether selection drift caused a tool error.
+  report-path:
+    description: Path to the reconciliation JSON report.
+
+runs:
+  using: node24
+  main: dist/index.js
+
+branding:
+  icon: check-circle
+  color: green

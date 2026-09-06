@@ -5,6 +5,10 @@
     "lint": { "dependsOn": ["^lint", "^build"] },
     "typecheck": { "dependsOn": ["^typecheck", "^build"] },
     "test": { "dependsOn": ["^build"] },
+    "@proofline/check#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
     "@proofline/check#test": { "dependsOn": ["build", "^build"] },
     "@proofline/playwright-reporter#test": { "dependsOn": ["build", "^build"] }
   }

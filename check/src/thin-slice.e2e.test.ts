@@ -13,7 +13,11 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { dispatchAction, type ActionsPort } from './main.js';
+import {
+  dispatchAction,
+  type ActionRuntime,
+  type ActionsPort,
+} from './main.js';
 
 const checkRoot = fileURLToPath(new URL('../', import.meta.url));
 const fixtureSource = fileURLToPath(
@@ -39,10 +43,7 @@ class TestActionsPort implements ActionsPort {
   readonly failures: string[] = [];
   readonly summaries: string[] = [];
 
-  constructor(
-    private readonly inputs: Readonly<Record<string, string>>,
-    readonly env: NodeJS.ProcessEnv,
-  ) {}
+  constructor(private readonly inputs: Readonly<Record<string, string>>) {}
 
   getInput(name: string): string {
     return this.inputs[name] ?? '';
@@ -56,9 +57,18 @@ class TestActionsPort implements ActionsPort {
     this.failures.push(message);
   }
 
-  appendSummary(markdown: string): void {
+  writeSummary(markdown: string): Promise<void> {
     this.summaries.push(markdown);
+    return Promise.resolve();
   }
+}
+
+function testRuntime(env: NodeJS.ProcessEnv): ActionRuntime {
+  return {
+    env,
+    nodeVersion: process.versions.node,
+    setExitCode: () => undefined,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -156,18 +166,15 @@ async function runSlice(options: { scenario: Scenario }): Promise<unknown> {
   const playwrightArguments = `--project=chromium\n--grep=${grep}`;
 
   const reconcile = async (): Promise<unknown> => {
-    const reconcilePort = new TestActionsPort(
-      {
-        operation: 'reconcile',
-        producers: 'e2e=1',
-        artifacts: 'proofline',
-        mode: 'report-only',
-        out: 'reconciliation.json',
-        summary: 'true',
-      },
-      env,
-    );
-    await dispatchAction(reconcilePort);
+    const reconcilePort = new TestActionsPort({
+      operation: 'reconcile',
+      producers: 'e2e=1',
+      artifacts: 'proofline',
+      mode: 'report-only',
+      out: 'reconciliation.json',
+      summary: 'true',
+    });
+    await dispatchAction(reconcilePort, undefined, testRuntime(env));
     expect(reconcilePort.failures).toEqual([]);
     return readJson(join(workspace, 'reconciliation.json'));
   };
@@ -177,19 +184,16 @@ async function runSlice(options: { scenario: Scenario }): Promise<unknown> {
     return reconcile();
   }
 
-  const planPort = new TestActionsPort(
-    {
-      operation: 'plan',
-      producer: 'e2e',
-      shard: '1/1',
-      'playwright-args': playwrightArguments,
-      config: 'playwright.config.ts',
-      repository: 'acme/checkout',
-      revision,
-    },
-    env,
-  );
-  await dispatchAction(planPort);
+  const planPort = new TestActionsPort({
+    operation: 'plan',
+    producer: 'e2e',
+    shard: '1/1',
+    'playwright-args': playwrightArguments,
+    config: 'playwright.config.ts',
+    repository: 'acme/checkout',
+    revision,
+  });
+  await dispatchAction(planPort, undefined, testRuntime(env));
   expect(planPort.failures).toEqual([]);
 
   if (options.scenario === 'active-disabled') {
@@ -263,16 +267,13 @@ async function runSlice(options: { scenario: Scenario }): Promise<unknown> {
     );
   }
 
-  const collectPort = new TestActionsPort(
-    {
-      operation: 'collect',
-      producer: 'e2e',
-      shard: '1/1',
-      report: 'proofline/report.json',
-    },
-    env,
-  );
-  await dispatchAction(collectPort);
+  const collectPort = new TestActionsPort({
+    operation: 'collect',
+    producer: 'e2e',
+    shard: '1/1',
+    report: 'proofline/report.json',
+  });
+  await dispatchAction(collectPort, undefined, testRuntime(env));
   if (options.scenario === 'selection-mismatch') {
     return {
       envelope: await readJson(join(workspace, 'proofline/envelope.json')),
@@ -373,7 +374,7 @@ describe('Proofline thin vertical slice', () => {
       return test.expectedStatus;
     });
     expect(plannedStatuses).toEqual(['passed', 'skipped']);
-    expect(result.plannedActiveOutput).toBe('1');
+    expect(result.plannedActiveOutput).toBe(1);
     expect(result.rawStatuses).toEqual([
       { status: 'skipped', expectedStatus: 'passed' },
       { status: 'skipped', expectedStatus: 'skipped' },

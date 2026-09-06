@@ -7,10 +7,11 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "bundle:check": "pnpm --filter @proofline/check bundle:check",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm bundle:check"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

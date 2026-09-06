@@ -4,17 +4,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "pnpm bundle",
+    "bundle:input": "tsc -p tsconfig.bundle.json",
+    "bundle": "pnpm bundle:input && ncc build lib/entry.js -o dist --minify",
+    "bundle:check": "pnpm bundle && git diff --exit-code -- dist",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src"
   },
   "dependencies": {
+    "@actions/core": "3.0.1",
     "@proofline/evidence-model": "workspace:*",
     "@proofline/playwright-evidence": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
-    "@types/node": "^24.0.0"
+    "@types/node": "^24.0.0",
+    "@vercel/ncc": "0.45.0"
   }
 }
