@@ -160,7 +160,10 @@ describe('validate-pilot-data', () => {
   });
 
   it('computes PROCEED only from a complete frozen cohort', () => {
-    expect(validate(completeData())).toMatchObject({
+    const result = validate(completeData()) as {
+      inputSha256: Record<string, string>;
+    };
+    expect(result).toMatchObject({
       outcome: 'PROCEED',
       rule: 'all_commercial_measures_met',
       measures: {
@@ -172,14 +175,17 @@ describe('validate-pilot-data', () => {
         retainedTeams: { value: 1, met: true },
         budgetProbes: { value: 1, met: true },
       },
-      inputSha256: {
-        freeze: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        interviews: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        runs: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        findings: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        events: expect.stringMatching(/^[a-f0-9]{64}$/u),
-      },
     });
+    expect(Object.keys(result.inputSha256).sort()).toEqual([
+      'events',
+      'findings',
+      'freeze',
+      'interviews',
+      'runs',
+    ]);
+    for (const digest of Object.values(result.inputSha256)) {
+      expect(digest).toMatch(/^[a-f0-9]{64}$/u);
+    }
   });
 
   it.each([
