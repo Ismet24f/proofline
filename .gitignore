@@ -2,6 +2,8 @@
 .superpowers/
 node_modules/
 dist/
+!check/dist/
+!check/dist/**
 coverage/
 **/.proofline/inventory.json
 **/.proofline/reports/

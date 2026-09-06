@@ -1,71 +1,49 @@
 # Proofline
 
-Proofline currently generates a schema-valid inventory of a Playwright suite through `playwright test --list`. It is Phase 0 source code for design partners: it does **not** recommend affected tests, reconcile execution results, provide a hosted service, or automate release verdicts.
+Proofline answers one question: **did every active Playwright test that this CI run planned produce trustworthy execution evidence?**
 
-## Requirements
+A normal GitHub rollup job can catch failed, cancelled, or skipped jobs. It cannot reliably identify a missing matrix shard, a runtime `test.skip()`, a worker interruption that leaves planned tests unexecuted, plan/execution selection drift, or an invalid Playwright report. Proofline's value is limited to those evidence gaps; repositories without them do not need Proofline.
 
-- Node 24
+## Current status
+
+Proofline v0.1 is being implemented as an open-source, local-only GitHub Action with three operations: `plan`, `collect`, and `reconcile`. The repository currently contains the independently reviewed specification, implementation plan, and Phase 0 discovery foundation. The consumable action and `check/dist` bundle do not exist yet.
+
+The action will run entirely on the GitHub runner. Consumers will not install a Proofline npm package, provide a token, add Proofline annotations, or send test data to a hosted service.
+
+## What v0.1 will report
+
+| Condition                                           | Proofline classification        |
+| --------------------------------------------------- | ------------------------------- |
+| Declared producer or shard has no valid artifacts   | `no_evidence`                   |
+| Active planned test is missing from a valid report  | `absent`                        |
+| Execution was interrupted or never reached the test | `incomplete`                    |
+| A test skipped during execution                     | `runtime_skipped`               |
+| A test passed only after retry                      | `retry_masked`                  |
+| Plan and execution selected different tests         | `selection_mismatch` tool error |
+
+Proofline says **planned**, never **should have run**. It does not determine whether the suite covers the product, whether a change is safe, or whether a release should proceed.
+
+## Important boundaries
+
+A job skipped by `if:` creates no plan fragment. Proofline can report `no_evidence` for the declared producer or shard, but it cannot name tests that were never discovered. Workflow-level `paths:` or `branches:` filtering is outside v0.1 because Proofline cannot inspect a workflow that never started.
+
+Playwright 1.62.1 ignores a config-defined JSON reporter `outputFile` when `--reporter=json` is supplied on the command line and writes JSON to stdout instead. Consumer workflows must set `PLAYWRIGHT_JSON_OUTPUT_FILE` to the same report path passed to Proofline. The future example workflow will include this explicitly.
+
+## Development
+
+Requirements:
+
+- Node 22 or Node 24
 - pnpm 10
-- Playwright 1.62.1
-
-## Run from the source workspace
-
-The packages in this repository are not yet published. Install and use the source workspace; this is not an npm consumer installation flow. The default-branch clone below is the merge-state installation path. Until this Phase 0 source is merged, the public default branch does not yet contain it.
+- Playwright 1.62.x for behavior fixtures
 
 ```sh
-git clone https://github.com/Ismet24f/proofline.git
-cd proofline
 corepack enable
 pnpm install --frozen-lockfile
-pnpm build
+pnpm turbo run lint typecheck build test --force
 ```
 
-Add the required Proofline metadata to your Playwright configuration. `repository` must be a non-empty, trimmed string and `revision` must be a lowercase, 40-character hexadecimal revision.
-
-```ts
-import { defineConfig } from '@playwright/test';
-
-export default defineConfig({
-  metadata: {
-    proofline: {
-      repository: 'your-org/your-repository',
-      revision: '0123456789abcdef0123456789abcdef01234567',
-    },
-  },
-});
-```
-
-Run discovery from the directory containing that configuration. The reporter can be provided on the command line:
-
-```sh
-pnpm exec playwright test --list --reporter=@proofline/playwright-reporter
-```
-
-Or configure it in `playwright.config.ts`:
-
-```ts
-reporter: [['@proofline/playwright-reporter', { outputFile: '.proofline/inventory.json' }]],
-```
-
-Without an `outputFile` override, the reporter writes `.proofline/inventory.json` beneath the configuration directory. A relative `outputFile` is also resolved from that directory.
-
-For a first-run check against the included workspace example, run from the repository root:
-
-```sh
-pnpm --dir examples/playwright-demo exec playwright test --list --reporter=@proofline/playwright-reporter
-```
-
-The command lists tests only; it does not execute browser test bodies. Discovery is fatal and produces no inventory when required metadata is missing or invalid, annotations are malformed, test IDs are invalid or conflict, or project naming is ambiguous. Explicit test IDs use `proofline.id` with the `PL-T-` prefix and at least five digits. The reporter captures static skip state only when Playwright lists a test as skipped; it does not discover runtime conditional skips.
-
-## Development verification
-
-From the repository root, run:
-
-```sh
-pnpm check
-```
-
-If you are evaluating Phase 0 as a design partner, feedback on the inventory shape and discovery failure messages is welcome. This invitation does not imply active adoption or a production commitment.
+The authoritative contracts are the [v0.1 specification](docs/superpowers/specs/2026-09-06-proofline-completeness-first-v0.1.md), [implementation plan](docs/superpowers/plans/2026-09-06-proofline-completeness-first-v0.1-implementation.md), and [ADR 0002](docs/decisions/0002-completeness-first-v0.1.md).
 
 ## License
 
