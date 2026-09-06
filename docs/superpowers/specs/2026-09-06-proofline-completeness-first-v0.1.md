@@ -393,7 +393,7 @@ Then producer table (including, for `no_evidence` producers, the explicit senten
 - **A2** Repo description: _"Open-source completeness check for Playwright on GitHub Actions: proves every planned test produced evidence."_
 - **A3** Remove unused `RegressionPlan`, `ReleaseDecision`, `EvidenceAssertion`, `PolicyViolation`, recommendation tiers, and their tests from public code. Record the scope decision in an ADR; Git history remains the archive.
 - **A4** Reuse only directly applicable `playwright-reporter` components such as identity normalization, `<default>` handling, and atomic writes. Remove its current consumer installation path rather than preserving an unused public package.
-- **A5** Replace `docs/validation/*` with §19 and two CSVs (`interviews.csv`, `pilot-observations.csv`).
+- **A5** Replace `docs/validation/*` with §19's frozen manifest, normalized evidence ledgers, executable evaluator, and generated decision record.
 - **A6** Verify current majors of `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`, `actions/download-artifact`, `pnpm/action-setup`; record reviewed full SHAs in `examples/consumer-workflow.yml` and this repo's CI; clear the Node 20 deprecation annotation.
 - **A7** Add `check/action.yml`, `check/dist/`, `examples/consumer-workflow.yml`, `SECURITY.md` updates, roadmap listing §20.
 
@@ -466,6 +466,7 @@ At **30 recorded hours** into A+B, hold a scope review. Permitted cuts, in order
 - **Disease-signal qualification:** each pilot repository has ≥1 of: conditional test jobs, matrix or shards, a skip that can occur during test execution, or `retries ≥ 1`. Workflow-level path filtering alone does not qualify because Proofline cannot evaluate a workflow that never starts.
 - Each pilot repository freezes its Playwright dependency to a tested 1.62.x lockfile for the observation window. A requested minor upgrade triggers the compatibility matrix as a same-day task; observations for that repository pause until it passes.
 - No production secrets or customer payloads enter the study.
+- The cohort, window, repository-team mapping, evidence references, lockfile SHAs, and thresholds are frozen in `pilot-freeze.json`; its SHA-256 is retained separately and required by the evaluator.
 
 Preflight not met → keep recruiting; not evidence about the problem.
 
@@ -485,10 +486,19 @@ Preflight not met → keep recruiting; not evidence about the problem.
 
 Thresholds freeze at preflight. Later records never change them.
 
+Evidence is normalized across `interviews.csv`, `pilot-runs.csv`,
+`pilot-findings.csv`, and `team-events.csv`. Unique participant aliases,
+repository/PR pairs, and run/test identity hashes prevent duplicate counting.
+Closed enums make every measure computable. The dependency-free evaluator
+validates all contracts, pins the SHA-256 of every input in its decision record,
+lists included and excluded IDs with reasons, and executes the mutually
+exclusive rules below in order. `docs/validation/decision-gate.md` is the
+operational authority for field contracts and the exact command.
+
 ### 19.3 Outcomes
 
 - **PROCEED** — rows 1–8 met, classifications trusted, retention voluntary. Authorizes hosted-history _design_ only.
-- **NARROW** — problem confirmed (2, 5) but user/workflow/buyer differs materially; rewrite §4 first.
+- **NARROW** — rows 2 and 5 meet their thresholds, no stop rule applies, and at least four qualified interviews independently identify the same frozen `W-...` alternative wedge; rewrite §4 first.
 - **STOP** — rows 1, 3, 4 met and (row 2 < 2, or row 5 = 0 in disease-qualified repos, or teams remove the action for low value). Legitimate: the problem is real but rare and §2's rollup suffices.
 - **INCONCLUSIVE** — rows 1, 3, or 4 unmet. Change channel or extend. Claim nothing.
 

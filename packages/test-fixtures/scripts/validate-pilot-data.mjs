@@ -1,36 +1,69 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const INTERVIEW_HEADER = [
-  'interview_id',
-  'team_alias',
-  'booked_at',
-  'conducted_at',
-  'qualified',
-  'role',
-  'playwright_github_actions',
-  'top_three_problem',
-  'budget_authority',
-  'price_probe_response',
-  'evidence_url',
-];
-const OBSERVATION_HEADER = [
-  'observation_id',
-  'team_alias',
-  'repository_alias',
-  'pr_alias',
-  'observed_at',
-  'disease_signal',
-  'proofline_status',
-  'classification',
-  'previously_unknown',
-  'customer_confirmed',
-  'false_positive',
-  'resolved_at',
-  'evidence_url',
-];
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const DAY_MS = 86_400_000;
+const HEADERS = {
+  interviews: [
+    'interview_id',
+    'participant_alias',
+    'team_alias',
+    'booked_at',
+    'conducted_at',
+    'qualified',
+    'role',
+    'playwright_github_actions',
+    'top_three_problem',
+    'budget_authority',
+    'price_probe_response',
+    'alternative_wedge_alias',
+    'evidence_ref',
+  ],
+  runs: [
+    'run_id',
+    'team_alias',
+    'repository_alias',
+    'pr_alias',
+    'observed_at',
+    'disease_qualified',
+    'proofline_status',
+    'evidence_ref',
+  ],
+  findings: [
+    'finding_id',
+    'run_id',
+    'test_identity_hash',
+    'classification',
+    'previously_unknown',
+    'customer_confirmed',
+    'false_positive',
+    'resolved_at',
+    'evidence_ref',
+  ],
+  events: [
+    'event_id',
+    'team_alias',
+    'event_type',
+    'occurred_at',
+    'value',
+    'evidence_ref',
+  ],
+};
+const THRESHOLDS = Object.freeze({
+  completedQualifiedInterviews: 8,
+  topThreeProblem: 4,
+  pilotRepositories: 3,
+  observedPullRequests: 60,
+  confirmedCatches: 3,
+  catchTeams: 2,
+  unresolvedFalsePositives: 0,
+  retainedTeams: 1,
+  budgetProbes: 1,
+});
 const QUALIFIED_ROLES = new Set([
   'qa_lead',
   'senior_qa_engineer',
@@ -40,38 +73,66 @@ const QUALIFIED_ROLES = new Set([
   'engineering_manager',
   'head_of_qa',
 ]);
-const ABSOLUTE_TIMESTAMP =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const OPAQUE_ALIAS = /^[A-Z][A-Z0-9_-]*$/;
-const EVIDENCE_REFERENCE = /^E-[A-Za-z0-9_-]+$/;
-const ALIAS_PREFIX = {
-  interview_id: 'I-',
-  observation_id: 'O-',
-  team_alias: 'T-',
-  repository_alias: 'R-',
-  pr_alias: 'PR-',
+const PRICE_RESPONSES = new Set(['accept', 'consider', 'reject', 'declined']);
+const DISEASE_SIGNALS = new Set([
+  'conditional_job',
+  'matrix_or_shards',
+  'runtime_skip',
+  'retries',
+]);
+const STATUSES = new Set(['complete', 'evidence_gaps', 'tool_error']);
+const CLASSIFICATIONS = new Set([
+  'executed_as_expected',
+  'retry_masked',
+  'failed',
+  'runtime_skipped',
+  'incomplete',
+  'absent',
+  'no_evidence',
+  'unexpected',
+]);
+const NOT_EXECUTED = new Set(['incomplete', 'absent', 'no_evidence']);
+const EVENT_VALUES = {
+  retention_day_30: new Set(['enabled', 'removed']),
+  noise_rating: new Set(['ignored', 'not_annoying', 'annoying', 'unusable']),
+  removal_reason: new Set(['low_value', 'other']),
 };
+const ABSOLUTE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+const SHA = /^[a-f0-9]{40}$/;
+const SHA256 = /^[a-f0-9]{64}$/;
+const EVIDENCE_REFERENCE = /^E-[A-Za-z0-9_-]+$/;
+const ALIASES = {
+  interview_id: /^I-[A-Z0-9_-]+$/,
+  participant_alias: /^P-[A-Z0-9_-]+$/,
+  team_alias: /^T-[A-Z0-9_-]+$/,
+  repository_alias: /^R-[A-Z0-9_-]+$/,
+  pr_alias: /^PR-[A-Z0-9_-]+$/,
+  run_id: /^RUN-[A-Z0-9_-]+$/,
+  finding_id: /^F-[A-Z0-9_-]+$/,
+  event_id: /^EV-[A-Z0-9_-]+$/,
+  alternative_wedge_alias: /^W-[A-Z0-9_-]+$/,
+  validationOwnerAlias: /^P-[A-Z0-9_-]+$/,
+};
+
+function fail(message) {
+  throw new Error(message);
+}
 
 function parseCsv(source, filePath) {
   const rows = [];
   let row = [];
   let field = '';
   let quoted = false;
-
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
     if (quoted) {
       if (character === '"' && source[index + 1] === '"') {
         field += '"';
         index += 1;
-      } else if (character === '"') {
-        quoted = false;
-      } else {
-        field += character;
-      }
-    } else if (character === '"' && field.length === 0) {
-      quoted = true;
-    } else if (character === ',') {
+      } else if (character === '"') quoted = false;
+      else field += character;
+    } else if (character === '"' && field.length === 0) quoted = true;
+    else if (character === ',') {
       row.push(field);
       field = '';
     } else if (character === '\n') {
@@ -79,196 +140,613 @@ function parseCsv(source, filePath) {
       rows.push(row);
       row = [];
       field = '';
-    } else {
-      field += character;
-    }
+    } else field += character;
   }
-
-  if (quoted) throw new Error(`${filePath}: unterminated quoted field`);
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
+  if (quoted) fail(`${filePath}: unterminated quoted field`);
+  if (field.length > 0 || row.length > 0) rows.push([...row, field]);
   return rows.filter((candidate) => candidate.some((value) => value !== ''));
 }
 
-function readRecords(filePath, expectedHeader) {
+function readRecords(filePath, header) {
   const rows = parseCsv(readFileSync(filePath, 'utf8'), filePath);
-  const header = rows.shift();
-  if (!header || header.join(',') !== expectedHeader.join(',')) {
-    throw new Error(
-      `${filePath}: header does not match the published contract`,
-    );
-  }
-
+  if (rows.shift()?.join(',') !== header.join(','))
+    fail(`${filePath}: header does not match the published contract`);
   return rows.map((values, index) => {
-    if (values.length !== expectedHeader.length) {
-      throw new Error(
-        `${filePath}:${index + 2}: expected ${expectedHeader.length} fields, received ${values.length}`,
+    if (values.length !== header.length)
+      fail(
+        `${filePath}:${String(index + 2)}: expected ${String(header.length)} fields, received ${String(values.length)}`,
       );
-    }
     return Object.fromEntries(
-      expectedHeader.map((name, offset) => [name, values[offset]]),
+      header.map((name, offset) => [name, values[offset]]),
     );
   });
 }
 
-function requireValue(record, field, location) {
-  if (!record[field]) throw new Error(`${location}: ${field} is required`);
+function location(filePath, index) {
+  return `${filePath}:${String(index + 2)}`;
 }
-
-function requireBoolean(record, field, location) {
-  if (record[field] !== 'yes' && record[field] !== 'no') {
-    throw new Error(`${location}: ${field} must be "yes" or "no"`);
-  }
+function required(record, field, at) {
+  if (!record[field]) fail(`${at}: ${field} is required`);
 }
-
-function requireTimestamp(record, field, location, optional = false) {
+function alias(record, field, at, optional = false) {
+  if (optional && record[field] === '') return;
+  if (!ALIASES[field]?.test(record[field]))
+    fail(`${at}: ${field} must be an opaque ${field} alias`);
+}
+function timestamp(record, field, at, optional = false) {
   const value = record[field];
   if (optional && value === '') return;
-  if (!ABSOLUTE_TIMESTAMP.test(value) || Number.isNaN(Date.parse(value))) {
-    throw new Error(
-      `${location}: ${field} must be an absolute ISO 8601 timestamp`,
-    );
-  }
+  if (!ABSOLUTE_TIMESTAMP.test(value) || Number.isNaN(Date.parse(value)))
+    fail(`${at}: ${field} must be a UTC ISO 8601 timestamp ending in Z`);
 }
-
-function requireAlias(record, field, location) {
-  const value = record[field];
-  if (!OPAQUE_ALIAS.test(value) || !value.startsWith(ALIAS_PREFIX[field])) {
-    throw new Error(
-      `${location}: ${field} must be an opaque ${ALIAS_PREFIX[field]} alias using uppercase letters, digits, underscores, or hyphens`,
-    );
-  }
+function bool(record, field, at) {
+  if (record[field] !== 'yes' && record[field] !== 'no')
+    fail(`${at}: ${field} must be "yes" or "no"`);
 }
-
-function validateEvidence(record, location, required) {
-  if (!required && record.evidence_url === '') return;
-  if (!EVIDENCE_REFERENCE.test(record.evidence_url)) {
-    throw new Error(
-      `${location}: evidence_url must be an alias-safe E- reference, not a raw customer URL`,
-    );
-  }
+function evidence(record, at) {
+  if (!EVIDENCE_REFERENCE.test(record.evidence_ref))
+    fail(`${at}: evidence_ref must be an alias-safe E- reference`);
 }
-
-function rejectDuplicateIds(records, field, filePath) {
+function unique(records, field, filePath) {
   const seen = new Set();
   for (const record of records) {
-    if (seen.has(record[field])) {
-      throw new Error(`${filePath}: duplicate ${field} "${record[field]}"`);
-    }
+    if (seen.has(record[field]))
+      fail(`${filePath}: duplicate ${field} "${record[field]}"`);
     seen.add(record[field]);
   }
 }
 
 function validateInterviews(records, filePath) {
-  rejectDuplicateIds(records, 'interview_id', filePath);
+  unique(records, 'interview_id', filePath);
+  unique(records, 'participant_alias', filePath);
+  unique(records, 'evidence_ref', filePath);
   records.forEach((record, index) => {
-    const location = `${filePath}:${index + 2}`;
-    for (const field of ['interview_id', 'team_alias', 'booked_at', 'role']) {
-      requireValue(record, field, location);
-    }
-    for (const field of ['interview_id', 'team_alias']) {
-      requireAlias(record, field, location);
-    }
-    requireTimestamp(record, 'booked_at', location);
-    requireTimestamp(record, 'conducted_at', location, true);
+    const at = location(filePath, index);
+    for (const field of [
+      'interview_id',
+      'participant_alias',
+      'team_alias',
+      'booked_at',
+      'role',
+    ])
+      required(record, field, at);
+    for (const field of ['interview_id', 'participant_alias', 'team_alias'])
+      alias(record, field, at);
+    alias(record, 'alternative_wedge_alias', at, true);
+    timestamp(record, 'booked_at', at);
+    timestamp(record, 'conducted_at', at, true);
     for (const field of [
       'qualified',
       'playwright_github_actions',
       'top_three_problem',
       'budget_authority',
-    ]) {
-      requireBoolean(record, field, location);
-    }
-    if (record.qualified === 'yes' && !QUALIFIED_ROLES.has(record.role)) {
-      throw new Error(`${location}: qualified=yes requires an allowed role`);
-    }
+    ])
+      bool(record, field, at);
+    if (record.qualified === 'yes' && !QUALIFIED_ROLES.has(record.role))
+      fail(`${at}: qualified=yes requires an allowed role`);
     if (
       record.qualified === 'yes' &&
       record.playwright_github_actions !== 'yes'
-    ) {
-      throw new Error(
-        `${location}: qualified=yes requires playwright_github_actions=yes`,
-      );
-    }
+    )
+      fail(`${at}: qualified=yes requires playwright_github_actions=yes`);
     if (
       record.conducted_at &&
       Date.parse(record.conducted_at) < Date.parse(record.booked_at)
-    ) {
-      throw new Error(`${location}: conducted_at cannot precede booked_at`);
-    }
-    validateEvidence(
-      record,
-      location,
-      record.qualified === 'yes' || Boolean(record.conducted_at),
-    );
+    )
+      fail(`${at}: conducted_at cannot precede booked_at`);
+    if (
+      record.budget_authority === 'yes' &&
+      record.conducted_at &&
+      !PRICE_RESPONSES.has(record.price_probe_response)
+    )
+      fail(
+        `${at}: a completed budget-authority interview requires a controlled price_probe_response`,
+      );
+    if (record.budget_authority === 'no' && record.price_probe_response !== '')
+      fail(`${at}: price_probe_response requires budget_authority=yes`);
+    evidence(record, at);
   });
 }
 
-function validateObservations(records, filePath) {
-  rejectDuplicateIds(records, 'observation_id', filePath);
+function validateRuns(records, filePath) {
+  unique(records, 'run_id', filePath);
+  unique(records, 'evidence_ref', filePath);
+  const pullRequests = new Set();
   records.forEach((record, index) => {
-    const location = `${filePath}:${index + 2}`;
+    const at = location(filePath, index);
+    for (const field of HEADERS.runs) required(record, field, at);
     for (const field of [
-      'observation_id',
+      'run_id',
       'team_alias',
       'repository_alias',
       'pr_alias',
-      'observed_at',
-      'disease_signal',
-      'proofline_status',
+    ])
+      alias(record, field, at);
+    timestamp(record, 'observed_at', at);
+    bool(record, 'disease_qualified', at);
+    if (!STATUSES.has(record.proofline_status))
+      fail(`${at}: unsupported proofline_status`);
+    evidence(record, at);
+    const key = `${record.repository_alias}:${record.pr_alias}`;
+    if (pullRequests.has(key))
+      fail(`${filePath}: duplicate repository_alias/pr_alias "${key}"`);
+    pullRequests.add(key);
+  });
+}
+
+function validateFindings(records, filePath) {
+  unique(records, 'finding_id', filePath);
+  unique(records, 'evidence_ref', filePath);
+  const identities = new Set();
+  records.forEach((record, index) => {
+    const at = location(filePath, index);
+    for (const field of [
+      'finding_id',
+      'run_id',
+      'test_identity_hash',
       'classification',
-    ]) {
-      requireValue(record, field, location);
-    }
-    for (const field of [
-      'observation_id',
-      'team_alias',
-      'repository_alias',
-      'pr_alias',
-    ]) {
-      requireAlias(record, field, location);
-    }
-    requireTimestamp(record, 'observed_at', location);
-    requireTimestamp(record, 'resolved_at', location, true);
+    ])
+      required(record, field, at);
+    for (const field of ['finding_id', 'run_id']) alias(record, field, at);
     for (const field of [
       'previously_unknown',
       'customer_confirmed',
       'false_positive',
-    ]) {
-      requireBoolean(record, field, location);
-    }
-    if (
-      record.resolved_at &&
-      Date.parse(record.resolved_at) < Date.parse(record.observed_at)
-    ) {
-      throw new Error(`${location}: resolved_at cannot precede observed_at`);
-    }
-    if (record.customer_confirmed === 'yes' && record.evidence_url === '') {
-      throw new Error(
-        `${location}: customer_confirmed=yes requires evidence_url`,
-      );
-    }
-    validateEvidence(record, location, true);
+    ])
+      bool(record, field, at);
+    timestamp(record, 'resolved_at', at, true);
+    if (!CLASSIFICATIONS.has(record.classification))
+      fail(`${at}: unsupported classification`);
+    if (record.false_positive === 'yes' && record.customer_confirmed !== 'yes')
+      fail(`${at}: false_positive=yes requires customer_confirmed=yes`);
+    if (!SHA256.test(record.test_identity_hash))
+      fail(`${at}: test_identity_hash must be a lowercase SHA-256`);
+    const identity = `${record.run_id}:${record.test_identity_hash}`;
+    if (identities.has(identity))
+      fail(`${filePath}: duplicate run_id/test_identity_hash "${identity}"`);
+    identities.add(identity);
+    evidence(record, at);
   });
 }
 
+function validateEvents(records, filePath) {
+  unique(records, 'event_id', filePath);
+  unique(records, 'evidence_ref', filePath);
+  records.forEach((record, index) => {
+    const at = location(filePath, index);
+    for (const field of HEADERS.events) required(record, field, at);
+    for (const field of ['event_id', 'team_alias']) alias(record, field, at);
+    timestamp(record, 'occurred_at', at);
+    const allowed = EVENT_VALUES[record.event_type];
+    if (!allowed || !allowed.has(record.value))
+      fail(`${at}: unsupported event_type/value combination`);
+    evidence(record, at);
+  });
+}
+
+function parseFreeze(filePath) {
+  const source = readFileSync(filePath, 'utf8');
+  let freeze;
+  try {
+    freeze = JSON.parse(source);
+  } catch {
+    fail(`${filePath}: invalid JSON`);
+  }
+  if (!freeze || typeof freeze !== 'object' || Array.isArray(freeze))
+    fail(`${filePath}: freeze must be an object`);
+  if (freeze.schemaVersion !== 1) fail(`${filePath}: schemaVersion must be 1`);
+  if (freeze.status !== 'draft' && freeze.status !== 'frozen')
+    fail(`${filePath}: status must be draft or frozen`);
+  if (
+    !freeze.thresholds ||
+    typeof freeze.thresholds !== 'object' ||
+    JSON.stringify(Object.keys(freeze.thresholds).sort()) !==
+      JSON.stringify(Object.keys(THRESHOLDS).sort()) ||
+    Object.entries(THRESHOLDS).some(
+      ([name, value]) => freeze.thresholds[name] !== value,
+    )
+  )
+    fail(`${filePath}: thresholds differ from the frozen contract`);
+  if (
+    !Array.isArray(freeze.interviewIds) ||
+    !Array.isArray(freeze.repositories)
+  )
+    fail(`${filePath}: cohorts must be arrays`);
+  if (freeze.status === 'draft') {
+    if (
+      freeze.windowStart !== '' ||
+      freeze.windowEnd !== '' ||
+      freeze.validationOwnerAlias !== '' ||
+      freeze.interviewIds.length !== 0 ||
+      freeze.repositories.length !== 0
+    )
+      fail(`${filePath}: draft freeze must not contain a partial cohort`);
+    return { freeze, source };
+  }
+  timestamp({ window_start: freeze.windowStart }, 'window_start', filePath);
+  timestamp({ window_end: freeze.windowEnd }, 'window_end', filePath);
+  alias(
+    { validationOwnerAlias: freeze.validationOwnerAlias },
+    'validationOwnerAlias',
+    filePath,
+  );
+  if (
+    Date.parse(freeze.windowEnd) - Date.parse(freeze.windowStart) !==
+    30 * DAY_MS
+  )
+    fail(`${filePath}: windowEnd must be exactly 30 days after windowStart`);
+  if (
+    freeze.interviewIds.length !== 8 ||
+    new Set(freeze.interviewIds).size !== 8 ||
+    freeze.interviewIds.some((id) => !ALIASES.interview_id.test(id))
+  )
+    fail(
+      `${filePath}: frozen cohort must contain exactly 8 unique interviewIds`,
+    );
+  if (freeze.repositories.length !== 3)
+    fail(`${filePath}: frozen cohort must contain exactly 3 repositories`);
+  const repositoryAliases = new Set();
+  const teamAliases = new Set();
+  for (const repository of freeze.repositories) {
+    for (const field of [
+      'repositoryAlias',
+      'teamAlias',
+      'lockfileCommit',
+      'diseaseSignal',
+      'diseaseEvidenceRef',
+      'authorizationEvidenceRef',
+      'evidenceHandlingEvidenceRef',
+    ])
+      required(repository, field, filePath);
+    if (
+      !ALIASES.repository_alias.test(repository.repositoryAlias) ||
+      !ALIASES.team_alias.test(repository.teamAlias)
+    )
+      fail(`${filePath}: repository and team aliases must be opaque`);
+    if (!SHA.test(repository.lockfileCommit))
+      fail(`${filePath}: lockfileCommit must be a lowercase 40-character SHA`);
+    if (!DISEASE_SIGNALS.has(repository.diseaseSignal))
+      fail(`${filePath}: unsupported diseaseSignal`);
+    for (const field of [
+      'diseaseEvidenceRef',
+      'authorizationEvidenceRef',
+      'evidenceHandlingEvidenceRef',
+    ])
+      if (!EVIDENCE_REFERENCE.test(repository[field]))
+        fail(`${filePath}: ${field} must be an E- reference`);
+    if (repositoryAliases.has(repository.repositoryAlias))
+      fail(`${filePath}: duplicate repositoryAlias`);
+    if (teamAliases.has(repository.teamAlias))
+      fail(`${filePath}: each pilot repository must belong to a distinct team`);
+    repositoryAliases.add(repository.repositoryAlias);
+    teamAliases.add(repository.teamAlias);
+  }
+  return { freeze, source };
+}
+
+function sha256(source) {
+  return createHash('sha256').update(source).digest('hex');
+}
+
+function evaluate(freeze, interviews, runs, findings, events, asOf, digest) {
+  if (freeze.status === 'draft')
+    return {
+      schemaVersion: 1,
+      outcome: 'NOT_STARTED',
+      freezeSha256: digest,
+      reason: 'preflight_not_frozen',
+    };
+  const start = Date.parse(freeze.windowStart);
+  const end = Date.parse(freeze.windowEnd);
+  const now = Date.parse(asOf);
+  const frozenInterviews = new Set(freeze.interviewIds);
+  const repositoryMap = new Map(
+    freeze.repositories.map((entry) => [
+      entry.repositoryAlias,
+      entry.teamAlias,
+    ]),
+  );
+  const teamSet = new Set(repositoryMap.values());
+  const included = { interviews: [], runs: [], findings: [], events: [] };
+  const excluded = [];
+  const qualified = interviews.filter((record) => {
+    const conducted = Date.parse(record.conducted_at);
+    const include =
+      frozenInterviews.has(record.interview_id) &&
+      record.qualified === 'yes' &&
+      record.playwright_github_actions === 'yes' &&
+      record.conducted_at !== '' &&
+      Date.parse(record.booked_at) <= start &&
+      conducted >= start &&
+      conducted <= end;
+    if (include) included.interviews.push(record.interview_id);
+    else
+      excluded.push({
+        id: record.interview_id,
+        reason: 'not_completed_qualified_frozen_interview',
+      });
+    return include;
+  });
+  const validRuns = runs.filter((record) => {
+    const observed = Date.parse(record.observed_at);
+    const include =
+      repositoryMap.get(record.repository_alias) === record.team_alias &&
+      observed >= start &&
+      observed < end &&
+      record.disease_qualified === 'yes' &&
+      record.proofline_status !== 'tool_error';
+    if (include) included.runs.push(record.run_id);
+    else
+      excluded.push({
+        id: record.run_id,
+        reason: 'run_outside_frozen_valid_cohort',
+      });
+    return include;
+  });
+  const runMap = new Map(validRuns.map((record) => [record.run_id, record]));
+  const validFindings = findings.filter((record) => {
+    const run = runMap.get(record.run_id);
+    const include =
+      run !== undefined &&
+      (!record.resolved_at ||
+        Date.parse(record.resolved_at) >= Date.parse(run.observed_at));
+    if (include) included.findings.push(record.finding_id);
+    else
+      excluded.push({
+        id: record.finding_id,
+        reason: 'finding_without_valid_run',
+      });
+    return include;
+  });
+  const validEvents = events.filter((record) => {
+    const occurred = Date.parse(record.occurred_at);
+    const include =
+      teamSet.has(record.team_alias) && occurred >= start && occurred <= now;
+    if (include) included.events.push(record.event_id);
+    else
+      excluded.push({
+        id: record.event_id,
+        reason: 'event_outside_frozen_team_or_time',
+      });
+    return include;
+  });
+  const catches = validFindings.filter(
+    (record) =>
+      NOT_EXECUTED.has(record.classification) &&
+      record.previously_unknown === 'yes' &&
+      record.customer_confirmed === 'yes' &&
+      record.false_positive === 'no',
+  );
+  const catchTeams = new Set(
+    catches.map((record) => runMap.get(record.run_id).team_alias),
+  );
+  const unresolvedFalsePositives = validFindings.filter(
+    (record) =>
+      record.false_positive === 'yes' &&
+      (!record.resolved_at || Date.parse(record.resolved_at) > end),
+  );
+  const retainedTeams = new Set(
+    validEvents
+      .filter(
+        (record) =>
+          record.event_type === 'retention_day_30' &&
+          record.value === 'enabled' &&
+          Date.parse(record.occurred_at) >= end,
+      )
+      .map((record) => record.team_alias),
+  );
+  const removedLowValueTeams = new Set(
+    validEvents
+      .filter(
+        (record) =>
+          record.event_type === 'removal_reason' &&
+          record.value === 'low_value',
+      )
+      .map((record) => record.team_alias),
+  );
+  const budgetProbes = qualified.filter(
+    (record) =>
+      record.budget_authority === 'yes' &&
+      PRICE_RESPONSES.has(record.price_probe_response),
+  );
+  const alternativeCounts = new Map();
+  for (const record of qualified)
+    if (record.alternative_wedge_alias)
+      alternativeCounts.set(
+        record.alternative_wedge_alias,
+        (alternativeCounts.get(record.alternative_wedge_alias) ?? 0) + 1,
+      );
+  const alternativeConsensus = Math.max(0, ...alternativeCounts.values());
+  const values = {
+    completedQualifiedInterviews: qualified.length,
+    topThreeProblem: qualified.filter(
+      (record) => record.top_three_problem === 'yes',
+    ).length,
+    pilotRepositories: new Set(
+      validRuns.map((record) => record.repository_alias),
+    ).size,
+    observedPullRequests: validRuns.length,
+    confirmedCatches: catches.length,
+    catchTeams: catchTeams.size,
+    unresolvedFalsePositives: unresolvedFalsePositives.length,
+    retainedTeams: retainedTeams.size,
+    budgetProbes: budgetProbes.length,
+  };
+  const measures = Object.fromEntries(
+    Object.entries(THRESHOLDS).map(([name, threshold]) => [
+      name,
+      {
+        value: values[name],
+        threshold,
+        met:
+          name === 'unresolvedFalsePositives'
+            ? values[name] === threshold
+            : values[name] >= threshold,
+      },
+    ]),
+  );
+  const allRemoved = removedLowValueTeams.size === teamSet.size;
+  let outcome;
+  let rule;
+  if (now < start) {
+    outcome = 'NOT_STARTED';
+    rule = 'window_not_started';
+  } else if (now < end) {
+    outcome = allRemoved ? 'STOP' : 'OBSERVING';
+    rule = allRemoved
+      ? 'early_all_teams_removed_for_low_value'
+      : 'window_in_progress';
+  } else if (
+    !measures.completedQualifiedInterviews.met ||
+    !measures.pilotRepositories.met ||
+    !measures.observedPullRequests.met
+  ) {
+    outcome = 'INCONCLUSIVE';
+    rule = 'minimum_sample_unmet';
+  } else if (Object.values(measures).every((measure) => measure.met)) {
+    outcome = 'PROCEED';
+    rule = 'all_commercial_measures_met';
+  } else if (
+    values.topThreeProblem < 2 ||
+    values.confirmedCatches === 0 ||
+    values.unresolvedFalsePositives > 0 ||
+    allRemoved
+  ) {
+    outcome = 'STOP';
+    rule = 'explicit_stop_condition';
+  } else if (
+    measures.topThreeProblem.met &&
+    measures.confirmedCatches.met &&
+    measures.catchTeams.met &&
+    alternativeConsensus >= 4
+  ) {
+    outcome = 'NARROW';
+    rule = 'consistent_alternative_wedge';
+  } else {
+    outcome = 'STOP';
+    rule = 'commercial_value_not_established';
+  }
+  const noiseRatings = validEvents
+    .filter((record) => record.event_type === 'noise_rating')
+    .map((record) => ({
+      teamAlias: record.team_alias,
+      value: record.value,
+      eventId: record.event_id,
+    }));
+  return {
+    schemaVersion: 1,
+    outcome,
+    rule,
+    decisionAt: asOf,
+    decisionOwnerAlias: freeze.validationOwnerAlias,
+    freezeSha256: digest,
+    window: { start: freeze.windowStart, end: freeze.windowEnd },
+    frozenCohort: {
+      interviewIds: freeze.interviewIds,
+      repositories: freeze.repositories.map(
+        ({ repositoryAlias, teamAlias }) => ({ repositoryAlias, teamAlias }),
+      ),
+    },
+    measures,
+    noiseRatings,
+    included,
+    excluded,
+  };
+}
+
+function parseArguments(argv) {
+  const options = {
+    paths: [],
+    asOf: new Date().toISOString(),
+    expectedDigest: '',
+    out: '',
+  };
+  for (const argument of argv) {
+    if (argument.startsWith('--as-of='))
+      options.asOf = argument.slice('--as-of='.length);
+    else if (argument.startsWith('--expected-freeze-sha256='))
+      options.expectedDigest = argument.slice(
+        '--expected-freeze-sha256='.length,
+      );
+    else if (argument.startsWith('--out='))
+      options.out = resolve(argument.slice('--out='.length));
+    else options.paths.push(resolve(argument));
+  }
+  const defaults = [
+    'docs/validation/pilot-freeze.json',
+    'docs/validation/interviews.csv',
+    'docs/validation/pilot-runs.csv',
+    'docs/validation/pilot-findings.csv',
+    'docs/validation/team-events.csv',
+  ].map((path) => resolve(ROOT, path));
+  return {
+    ...options,
+    paths: defaults.map((fallback, index) => options.paths[index] ?? fallback),
+  };
+}
+
+function writeAtomically(path, value) {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, value, {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx',
+    });
+    renameSync(temporary, path);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
 try {
-  const interviewsPath = resolve(
-    process.argv[2] ?? 'docs/validation/interviews.csv',
-  );
-  const observationsPath = resolve(
-    process.argv[3] ?? 'docs/validation/pilot-observations.csv',
-  );
-  const interviews = readRecords(interviewsPath, INTERVIEW_HEADER);
-  const observations = readRecords(observationsPath, OBSERVATION_HEADER);
+  const options = parseArguments(process.argv.slice(2));
+  const [freezePath, interviewsPath, runsPath, findingsPath, eventsPath] =
+    options.paths;
+  const { freeze, source } = parseFreeze(freezePath);
+  const digest = sha256(source);
+  if (freeze.status === 'frozen') {
+    if (!/^[a-f0-9]{64}$/.test(options.expectedDigest))
+      fail(
+        'frozen evaluation requires --expected-freeze-sha256=<64 lowercase hex>',
+      );
+    if (options.expectedDigest !== digest)
+      fail('freeze SHA-256 does not match the externally retained digest');
+  }
+  const interviews = readRecords(interviewsPath, HEADERS.interviews);
+  const runs = readRecords(runsPath, HEADERS.runs);
+  const findings = readRecords(findingsPath, HEADERS.findings);
+  const events = readRecords(eventsPath, HEADERS.events);
   validateInterviews(interviews, interviewsPath);
-  validateObservations(observations, observationsPath);
-  process.stdout.write(
-    `Pilot data validated ${interviews.length} interviews and ${observations.length} observations.\n`,
-  );
+  validateRuns(runs, runsPath);
+  validateFindings(findings, findingsPath);
+  validateEvents(events, eventsPath);
+  if (
+    !ABSOLUTE_TIMESTAMP.test(options.asOf) ||
+    Number.isNaN(Date.parse(options.asOf))
+  )
+    fail('--as-of must be a UTC ISO 8601 timestamp ending in Z');
+  const decision = {
+    ...evaluate(
+      freeze,
+      interviews,
+      runs,
+      findings,
+      events,
+      options.asOf,
+      digest,
+    ),
+    inputSha256: {
+      freeze: digest,
+      interviews: sha256(readFileSync(interviewsPath)),
+      runs: sha256(readFileSync(runsPath)),
+      findings: sha256(readFileSync(findingsPath)),
+      events: sha256(readFileSync(eventsPath)),
+    },
+  };
+  const serialized = `${JSON.stringify(decision, undefined, 2)}\n`;
+  if (options.out) writeAtomically(options.out, serialized);
+  process.stdout.write(serialized);
 } catch (error) {
   process.stderr.write(
     `Pilot data validation failed: ${error instanceof Error ? error.message : String(error)}\n`,

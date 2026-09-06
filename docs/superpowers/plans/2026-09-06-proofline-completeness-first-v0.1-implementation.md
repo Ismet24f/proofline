@@ -53,7 +53,10 @@
 | `examples/consumer-workflow.yml`                      | Copy-paste consumer integration with pinned action SHAs                  |
 | `.github/workflows/proofline-self-test.yml`           | Real skipped-job, missing-shard, interruption, and selection-drift proof |
 | `docs/validation/interviews.csv`                      | Qualified interview evidence                                             |
-| `docs/validation/pilot-observations.csv`              | Immutable pilot PR observations and confirmations                        |
+| `docs/validation/pilot-freeze.json`                   | Frozen cohort, window, preconditions, and thresholds                     |
+| `docs/validation/pilot-runs.csv`                      | Immutable, unique pilot PR runs                                          |
+| `docs/validation/pilot-findings.csv`                  | Findings linked to runs and stable test identity hashes                  |
+| `docs/validation/team-events.csv`                     | Retention, noise, and removal evidence                                   |
 
 ## Scenario Coverage Matrix
 
@@ -1010,7 +1013,10 @@ The description command changes only the public description; it must not change 
 
 - Replace: `docs/validation/decision-gate.md`
 - Create: `docs/validation/interviews.csv`
-- Create: `docs/validation/pilot-observations.csv`
+- Create: `docs/validation/pilot-freeze.json`
+- Create: `docs/validation/pilot-runs.csv`
+- Create: `docs/validation/pilot-findings.csv`
+- Create: `docs/validation/team-events.csv`
 - Remove: superseded CSVs in `docs/validation/`
 - Create: `docs/roadmap.md`
 - Modify: `README.md`
@@ -1033,7 +1039,7 @@ interview_id,team_alias,booked_at,conducted_at,qualified,role,playwright_github_
 observation_id,team_alias,repository_alias,pr_alias,observed_at,disease_signal,proofline_status,classification,previously_unknown,customer_confirmed,false_positive,resolved_at,evidence_url
 ```
 
-Add a dependency-free Node ESM validation script under `packages/test-fixtures/scripts/validate-pilot-data.mjs` that rejects duplicate IDs, raw repository names, invalid booleans, mutable timestamps, and missing confirmation evidence. Keep `.mjs` consciously for consistency with existing repository maintenance scripts; typed production and evidence-domain code remains TypeScript.
+Add a dependency-free Node ESM evaluator under `packages/test-fixtures/scripts/validate-pilot-data.mjs` that validates the frozen manifest and normalized ledgers, rejects duplicate participants/PRs/findings, enforces closed enums and timestamps, verifies the externally retained freeze digest, calculates every gate measure, and writes the deterministic decision record. Keep `.mjs` consciously for consistency with existing repository maintenance scripts; typed production and evidence-domain code remains TypeScript.
 
 - [ ] **Step 2: Replace the gate text exactly from the spec**
 
@@ -1041,7 +1047,7 @@ The gate must implement preflight, frozen 30-day window, thresholds 1–9, and m
 
 - [ ] **Step 3: Remove superseded process files safely**
 
-Delete `commitment-register.csv`, `field-dictionary.md`, `installation-scorecard.csv`, `interview-guide.md`, `interview-scorecard.csv`, `selection-risk-probe.csv`, and `workflow-diary.md` only after all unique privacy/qualification fields needed by the new two CSVs and gate have been mapped. Git history remains the archive.
+Delete `commitment-register.csv`, `field-dictionary.md`, `installation-scorecard.csv`, `interview-guide.md`, `interview-scorecard.csv`, `selection-risk-probe.csv`, and `workflow-diary.md` only after all unique privacy and qualification fields needed by the normalized gate inputs have been mapped. Git history remains the archive.
 
 - [ ] **Step 4: Add the narrow roadmap and release checklist**
 

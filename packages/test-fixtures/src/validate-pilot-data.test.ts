@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -6,10 +7,25 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-const INTERVIEW_HEADER =
-  'interview_id,team_alias,booked_at,conducted_at,qualified,role,playwright_github_actions,top_three_problem,budget_authority,price_probe_response,evidence_url';
-const OBSERVATION_HEADER =
-  'observation_id,team_alias,repository_alias,pr_alias,observed_at,disease_signal,proofline_status,classification,previously_unknown,customer_confirmed,false_positive,resolved_at,evidence_url';
+const HEADERS = {
+  interviews:
+    'interview_id,participant_alias,team_alias,booked_at,conducted_at,qualified,role,playwright_github_actions,top_three_problem,budget_authority,price_probe_response,alternative_wedge_alias,evidence_ref',
+  runs: 'run_id,team_alias,repository_alias,pr_alias,observed_at,disease_qualified,proofline_status,evidence_ref',
+  findings:
+    'finding_id,run_id,test_identity_hash,classification,previously_unknown,customer_confirmed,false_positive,resolved_at,evidence_ref',
+  events: 'event_id,team_alias,event_type,occurred_at,value,evidence_ref',
+};
+const THRESHOLDS = {
+  completedQualifiedInterviews: 8,
+  topThreeProblem: 4,
+  pilotRepositories: 3,
+  observedPullRequests: 60,
+  confirmedCatches: 3,
+  catchTeams: 2,
+  unresolvedFalsePositives: 0,
+  retainedTeams: 1,
+  budgetProbes: 1,
+};
 const SCRIPT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../scripts/validate-pilot-data.mjs',
@@ -20,24 +36,109 @@ const REPOSITORY_ROOT = resolve(
 );
 const workspaces: string[] = [];
 
-function validate(interviewRows: string[], observationRows: string[]): string {
+function frozenManifest() {
+  return {
+    schemaVersion: 1,
+    status: 'frozen',
+    windowStart: '2026-09-01T00:00:00Z',
+    windowEnd: '2026-10-01T00:00:00Z',
+    validationOwnerAlias: 'P-OWNER',
+    interviewIds: Array.from(
+      { length: 8 },
+      (_, index) => `I-${String(index + 1).padStart(3, '0')}`,
+    ),
+    repositories: Array.from({ length: 3 }, (_, index) => ({
+      repositoryAlias: `R-${String(index + 1).padStart(3, '0')}`,
+      teamAlias: `T-${String(index + 1).padStart(3, '0')}`,
+      lockfileCommit: String(index + 1).repeat(40),
+      diseaseSignal: 'matrix_or_shards',
+      diseaseEvidenceRef: `E-DISEASE-${String(index + 1)}`,
+      authorizationEvidenceRef: `E-AUTH-${String(index + 1)}`,
+      evidenceHandlingEvidenceRef: `E-HANDLING-${String(index + 1)}`,
+    })),
+    thresholds: THRESHOLDS,
+  };
+}
+
+interface PilotData {
+  freeze?: ReturnType<typeof frozenManifest> | Record<string, unknown>;
+  interviews?: string[];
+  runs?: string[];
+  findings?: string[];
+  events?: string[];
+}
+
+function validate(
+  data: PilotData,
+  expectedDigest?: string,
+  asOf = '2026-10-01T00:00:00Z',
+): unknown {
   const workspace = mkdtempSync(join(tmpdir(), 'proofline-pilot-data-'));
   workspaces.push(workspace);
-  const interviews = join(workspace, 'interviews.csv');
-  const observations = join(workspace, 'pilot-observations.csv');
-
-  writeFileSync(
-    interviews,
-    `${[INTERVIEW_HEADER, ...interviewRows].join('\n')}\n`,
+  const freezePath = join(workspace, 'pilot-freeze.json');
+  const freezeSource = `${JSON.stringify(data.freeze ?? frozenManifest(), undefined, 2)}\n`;
+  writeFileSync(freezePath, freezeSource);
+  const files = (['interviews', 'runs', 'findings', 'events'] as const).map(
+    (name) => {
+      const path = join(workspace, `${name}.csv`);
+      writeFileSync(
+        path,
+        `${[HEADERS[name], ...(data[name] ?? [])].join('\n')}\n`,
+      );
+      return path;
+    },
   );
-  writeFileSync(
-    observations,
-    `${[OBSERVATION_HEADER, ...observationRows].join('\n')}\n`,
-  );
+  const digest =
+    expectedDigest ?? createHash('sha256').update(freezeSource).digest('hex');
+  return JSON.parse(
+    execFileSync(
+      process.execPath,
+      [
+        SCRIPT,
+        freezePath,
+        ...files,
+        `--as-of=${asOf}`,
+        `--expected-freeze-sha256=${digest}`,
+      ],
+      { encoding: 'utf8' },
+    ),
+  ) as unknown;
+}
 
-  return execFileSync(process.execPath, [SCRIPT, interviews, observations], {
-    encoding: 'utf8',
+function completeData(): Required<
+  Pick<PilotData, 'interviews' | 'runs' | 'findings' | 'events'>
+> {
+  const interviews = Array.from({ length: 8 }, (_, index) => {
+    const current = index + 1;
+    return [
+      `I-${String(current).padStart(3, '0')}`,
+      `P-${String(current).padStart(3, '0')}`,
+      `T-${String((index % 3) + 1).padStart(3, '0')}`,
+      '2026-08-20T09:00:00Z',
+      `2026-09-${String(current + 1).padStart(2, '0')}T09:00:00Z`,
+      'yes',
+      'qa_lead',
+      'yes',
+      index < 4 ? 'yes' : 'no',
+      index === 0 ? 'yes' : 'no',
+      index === 0 ? 'consider' : '',
+      '',
+      `E-INTERVIEW-${String(current)}`,
+    ].join(',');
   });
+  const runs = Array.from({ length: 60 }, (_, index) => {
+    const cohort = (index % 3) + 1;
+    return `RUN-${String(index + 1).padStart(3, '0')},T-${String(cohort).padStart(3, '0')},R-${String(cohort).padStart(3, '0')},PR-${String(index + 1).padStart(3, '0')},2026-09-15T12:00:00Z,yes,complete,E-RUN-${String(index + 1)}`;
+  });
+  const findings = [1, 2, 3].map(
+    (current) =>
+      `F-${String(current).padStart(3, '0')},RUN-${String(current).padStart(3, '0')},${String(current).repeat(64)},incomplete,yes,yes,no,,E-FINDING-${String(current)}`,
+  );
+  const events = [
+    'EV-001,T-001,retention_day_30,2026-10-01T00:00:00Z,enabled,E-RETENTION-1',
+    'EV-002,T-001,noise_rating,2026-09-30T12:00:00Z,not_annoying,E-NOISE-1',
+  ];
+  return { interviews, runs, findings, events };
 }
 
 afterEach(() => {
@@ -47,75 +148,123 @@ afterEach(() => {
 });
 
 describe('validate-pilot-data', () => {
-  it('accepts the two blank public templates', () => {
-    expect(
-      execFileSync(process.execPath, [SCRIPT], {
-        cwd: REPOSITORY_ROOT,
-        encoding: 'utf8',
+  it('accepts the public draft contracts without starting the clock', () => {
+    const output = execFileSync(process.execPath, [SCRIPT], {
+      cwd: REPOSITORY_ROOT,
+      encoding: 'utf8',
+    });
+    expect(JSON.parse(output)).toMatchObject({
+      outcome: 'NOT_STARTED',
+      reason: 'preflight_not_frozen',
+    });
+  });
+
+  it('computes PROCEED only from a complete frozen cohort', () => {
+    expect(validate(completeData())).toMatchObject({
+      outcome: 'PROCEED',
+      rule: 'all_commercial_measures_met',
+      measures: {
+        completedQualifiedInterviews: { value: 8, met: true },
+        pilotRepositories: { value: 3, met: true },
+        observedPullRequests: { value: 60, met: true },
+        confirmedCatches: { value: 3, met: true },
+        catchTeams: { value: 3, met: true },
+        retainedTeams: { value: 1, met: true },
+        budgetProbes: { value: 1, met: true },
+      },
+      inputSha256: {
+        freeze: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        interviews: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        runs: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        findings: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        events: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      },
+    });
+  });
+
+  it.each([
+    [
+      'OBSERVING',
+      (data: ReturnType<typeof completeData>) => data,
+      '2026-09-20T00:00:00Z',
+    ],
+    [
+      'INCONCLUSIVE',
+      (data: ReturnType<typeof completeData>) => ({
+        ...data,
+        runs: data.runs.slice(0, 59),
       }),
-    ).toContain('validated 0 interviews and 0 observations');
+      '2026-10-01T00:00:00Z',
+    ],
+    [
+      'STOP',
+      (data: ReturnType<typeof completeData>) => ({
+        ...data,
+        findings: [],
+      }),
+      '2026-10-01T00:00:00Z',
+    ],
+    [
+      'NARROW',
+      (data: ReturnType<typeof completeData>) => ({
+        ...data,
+        interviews: data.interviews.map((row, index) => {
+          if (index >= 4) return row;
+          const fields = row.split(',');
+          fields[11] = 'W-ALTERNATIVE';
+          return fields.join(',');
+        }),
+        events: data.events.filter(
+          (event) => !event.includes('retention_day_30'),
+        ),
+      }),
+      '2026-10-01T00:00:00Z',
+    ],
+  ])('computes the mutually exclusive %s branch', (outcome, mutate, asOf) => {
+    expect(validate(mutate(completeData()), undefined, asOf)).toMatchObject({
+      outcome,
+    });
   });
 
-  it('rejects duplicate immutable record IDs', () => {
-    expect(() =>
-      validate(
-        [
-          'I-001,T-001,2026-09-06T09:00:00Z,,yes,qa_lead,yes,yes,no,,E-001',
-          'I-001,T-002,2026-09-06T10:00:00Z,,yes,release_owner,yes,no,no,,E-002',
-        ],
-        [],
-      ),
-    ).toThrow(/duplicate interview_id "I-001"/);
+  it('rejects a changed freeze against its externally retained digest', () => {
+    expect(() => validate(completeData(), 'a'.repeat(64))).toThrow(
+      /freeze SHA-256 does not match/,
+    );
   });
 
-  it('rejects raw repository names instead of opaque aliases', () => {
-    expect(() =>
-      validate(
-        [],
-        [
-          'O-001,T-001,acme/payments,PR-001,2026-09-06T11:00:00Z,matrix,complete,complete,no,no,no,,E-003',
-        ],
-      ),
-    ).toThrow(/repository_alias must be an opaque R- alias/);
+  it('rejects duplicate participant aliases', () => {
+    const data = completeData();
+    data.interviews[1] = data.interviews[1]?.replace('P-002', 'P-001') ?? '';
+    expect(() => validate(data)).toThrow(/duplicate participant_alias/);
   });
 
-  it('rejects invalid boolean tokens', () => {
-    expect(() =>
-      validate(
-        ['I-001,T-001,2026-09-06T09:00:00Z,,true,qa_lead,yes,yes,no,,E-001'],
-        [],
-      ),
-    ).toThrow(/qualified must be "yes" or "no"/);
+  it('rejects duplicate pull-request aliases within a repository', () => {
+    const data = completeData();
+    data.runs[3] =
+      data.runs[3]?.replace('PR-004', 'PR-001').replace('R-001', 'R-001') ?? '';
+    expect(() => validate(data)).toThrow(
+      /duplicate repository_alias\/pr_alias/,
+    );
   });
 
-  it('rejects a qualified interview without the required toolchain', () => {
-    expect(() =>
-      validate(
-        ['I-001,T-001,2026-09-06T09:00:00Z,,yes,qa_lead,no,yes,no,,E-001'],
-        [],
-      ),
-    ).toThrow(/qualified=yes requires playwright_github_actions=yes/);
+  it('requires a controlled response from a completed budget authority', () => {
+    const data = completeData();
+    const fields = data.interviews[0]?.split(',') ?? [];
+    fields[10] = '';
+    data.interviews[0] = fields.join(',');
+    expect(() => validate(data)).toThrow(/price_probe_response/);
   });
 
-  it('rejects relative or date-only values for immutable timestamps', () => {
-    expect(() =>
-      validate(
-        [],
-        [
-          'O-001,T-001,R-001,PR-001,2026-09-06,matrix,complete,complete,no,no,no,,E-003',
-        ],
-      ),
-    ).toThrow(/observed_at must be an absolute ISO 8601 timestamp/);
+  it('rejects arbitrary classifications and event values', () => {
+    const data = completeData();
+    data.findings[0] =
+      data.findings[0]?.replace(',incomplete,', ',probably_missing,') ?? '';
+    expect(() => validate(data)).toThrow(/unsupported classification/);
   });
 
-  it('rejects a customer confirmation without linked evidence', () => {
-    expect(() =>
-      validate(
-        [],
-        [
-          'O-001,T-001,R-001,PR-001,2026-09-06T11:00:00Z,matrix,not_executed,absent,yes,yes,no,,',
-        ],
-      ),
-    ).toThrow(/customer_confirmed=yes requires evidence_url/);
+  it('requires each frozen repository to represent a distinct team', () => {
+    const freeze = frozenManifest();
+    if (freeze.repositories[1]) freeze.repositories[1].teamAlias = 'T-001';
+    expect(() => validate({ freeze })).toThrow(/distinct team/);
   });
 });
