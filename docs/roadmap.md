@@ -48,8 +48,8 @@ before any hosted code.
 - [x] Node 24 lint, typecheck, build, and tests pass on the candidate branch.
 - [x] The committed `check/dist` bundle is deterministic.
 - [x] A consumer with no Proofline package installation passes from the bundled action.
-- [x] Live CI run recorded: <https://github.com/Ismet24f/proofline/actions/runs/34033737310>.
-- [x] Live adversarial self-test recorded: <https://github.com/Ismet24f/proofline/actions/runs/34033737327>.
+- [ ] Record the final reviewed merge commit's live CI run URL.
+- [ ] Record the final reviewed merge commit's live adversarial self-test run URL.
 - [x] Bundled dependency inventory and `THIRD_PARTY_NOTICES.md` are generated and verified.
 - [ ] Independent code and security review has no unresolved release blocker.
 - [ ] Create immutable `v0.1.0` only from the reviewed, green merge commit.

@@ -97,7 +97,8 @@ const EVENT_VALUES = {
   noise_rating: new Set(['ignored', 'not_annoying', 'annoying', 'unusable']),
   removal_reason: new Set(['low_value', 'other']),
 };
-const ABSOLUTE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+const ABSOLUTE_TIMESTAMP =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const EVIDENCE_REFERENCE = /^E-[A-Za-z0-9_-]+$/;
@@ -147,8 +148,8 @@ function parseCsv(source, filePath) {
   return rows.filter((candidate) => candidate.some((value) => value !== ''));
 }
 
-function readRecords(filePath, header) {
-  const rows = parseCsv(readFileSync(filePath, 'utf8'), filePath);
+function readRecords(filePath, header, source) {
+  const rows = parseCsv(source, filePath);
   if (rows.shift()?.join(',') !== header.join(','))
     fail(`${filePath}: header does not match the published contract`);
   return rows.map((values, index) => {
@@ -176,8 +177,24 @@ function alias(record, field, at, optional = false) {
 function timestamp(record, field, at, optional = false) {
   const value = record[field];
   if (optional && value === '') return;
-  if (!ABSOLUTE_TIMESTAMP.test(value) || Number.isNaN(Date.parse(value)))
-    fail(`${at}: ${field} must be a UTC ISO 8601 timestamp ending in Z`);
+  const parsed = Date.parse(value);
+  const normalized = value.replace(
+    /(?:\.(\d{1,3}))?Z$/,
+    (_match, fraction = '') => `.${fraction.padEnd(3, '0')}Z`,
+  );
+  if (
+    !ABSOLUTE_TIMESTAMP.test(value) ||
+    Number.isNaN(parsed) ||
+    new Date(parsed).toISOString() !== normalized
+  )
+    fail(`${at}: ${field} must be a canonical UTC ISO 8601 timestamp`);
+}
+
+function exactKeys(value, expected, at) {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    fail(`${at}: contains unsupported fields or omits required fields`);
 }
 function bool(record, field, at) {
   if (record[field] !== 'yes' && record[field] !== 'no')
@@ -312,6 +329,7 @@ function validateFindings(records, filePath) {
 function validateEvents(records, filePath) {
   unique(records, 'event_id', filePath);
   unique(records, 'evidence_ref', filePath);
+  const teamEventTypes = new Set();
   records.forEach((record, index) => {
     const at = location(filePath, index);
     for (const field of HEADERS.events) required(record, field, at);
@@ -320,12 +338,15 @@ function validateEvents(records, filePath) {
     const allowed = EVENT_VALUES[record.event_type];
     if (!allowed || !allowed.has(record.value))
       fail(`${at}: unsupported event_type/value combination`);
+    const teamEventType = `${record.team_alias}:${record.event_type}`;
+    if (teamEventTypes.has(teamEventType))
+      fail(`${filePath}: duplicate team_alias/event_type "${teamEventType}"`);
+    teamEventTypes.add(teamEventType);
     evidence(record, at);
   });
 }
 
-function parseFreeze(filePath) {
-  const source = readFileSync(filePath, 'utf8');
+function parseFreeze(filePath, source) {
   let freeze;
   try {
     freeze = JSON.parse(source);
@@ -334,6 +355,21 @@ function parseFreeze(filePath) {
   }
   if (!freeze || typeof freeze !== 'object' || Array.isArray(freeze))
     fail(`${filePath}: freeze must be an object`);
+  exactKeys(
+    freeze,
+    [
+      'schemaVersion',
+      'status',
+      'windowStart',
+      'windowEnd',
+      'evaluationAt',
+      'validationOwnerAlias',
+      'interviewIds',
+      'repositories',
+      'thresholds',
+    ],
+    filePath,
+  );
   if (freeze.schemaVersion !== 1) fail(`${filePath}: schemaVersion must be 1`);
   if (freeze.status !== 'draft' && freeze.status !== 'frozen')
     fail(`${filePath}: status must be draft or frozen`);
@@ -356,6 +392,7 @@ function parseFreeze(filePath) {
     if (
       freeze.windowStart !== '' ||
       freeze.windowEnd !== '' ||
+      freeze.evaluationAt !== '' ||
       freeze.validationOwnerAlias !== '' ||
       freeze.interviewIds.length !== 0 ||
       freeze.repositories.length !== 0
@@ -365,6 +402,7 @@ function parseFreeze(filePath) {
   }
   timestamp({ window_start: freeze.windowStart }, 'window_start', filePath);
   timestamp({ window_end: freeze.windowEnd }, 'window_end', filePath);
+  timestamp({ evaluation_at: freeze.evaluationAt }, 'evaluation_at', filePath);
   alias(
     { validationOwnerAlias: freeze.validationOwnerAlias },
     'validationOwnerAlias',
@@ -375,6 +413,13 @@ function parseFreeze(filePath) {
     30 * DAY_MS
   )
     fail(`${filePath}: windowEnd must be exactly 30 days after windowStart`);
+  if (
+    Date.parse(freeze.evaluationAt) < Date.parse(freeze.windowEnd) ||
+    Date.parse(freeze.evaluationAt) > Date.parse(freeze.windowEnd) + DAY_MS
+  )
+    fail(
+      `${filePath}: evaluationAt must be between windowEnd and 24 hours after windowEnd`,
+    );
   if (
     freeze.interviewIds.length !== 8 ||
     new Set(freeze.interviewIds).size !== 8 ||
@@ -388,6 +433,25 @@ function parseFreeze(filePath) {
   const repositoryAliases = new Set();
   const teamAliases = new Set();
   for (const repository of freeze.repositories) {
+    if (
+      !repository ||
+      typeof repository !== 'object' ||
+      Array.isArray(repository)
+    )
+      fail(`${filePath}: each repository must be an object`);
+    exactKeys(
+      repository,
+      [
+        'repositoryAlias',
+        'teamAlias',
+        'lockfileCommit',
+        'diseaseSignal',
+        'diseaseEvidenceRef',
+        'authorizationEvidenceRef',
+        'evidenceHandlingEvidenceRef',
+      ],
+      filePath,
+    );
     for (const field of [
       'repositoryAlias',
       'teamAlias',
@@ -438,6 +502,7 @@ function evaluate(freeze, interviews, runs, findings, events, asOf, digest) {
     };
   const start = Date.parse(freeze.windowStart);
   const end = Date.parse(freeze.windowEnd);
+  const evaluationAt = Date.parse(freeze.evaluationAt);
   const now = Date.parse(asOf);
   const frozenInterviews = new Set(freeze.interviewIds);
   const repositoryMap = new Map(
@@ -544,6 +609,9 @@ function evaluate(freeze, interviews, runs, findings, events, asOf, digest) {
       )
       .map((record) => record.team_alias),
   );
+  for (const team of retainedTeams)
+    if (removedLowValueTeams.has(team))
+      fail(`team ${team}: retention contradicts low-value removal`);
   const budgetProbes = qualified.filter(
     (record) =>
       record.budget_authority === 'yes' &&
@@ -591,11 +659,13 @@ function evaluate(freeze, interviews, runs, findings, events, asOf, digest) {
   if (now < start) {
     outcome = 'NOT_STARTED';
     rule = 'window_not_started';
-  } else if (now < end) {
+  } else if (now < evaluationAt) {
     outcome = allRemoved ? 'STOP' : 'OBSERVING';
     rule = allRemoved
       ? 'early_all_teams_removed_for_low_value'
-      : 'window_in_progress';
+      : now < end
+        ? 'window_in_progress'
+        : 'decision_cutoff_pending';
   } else if (
     !measures.completedQualifiedInterviews.met ||
     !measures.pilotRepositories.met ||
@@ -603,9 +673,6 @@ function evaluate(freeze, interviews, runs, findings, events, asOf, digest) {
   ) {
     outcome = 'INCONCLUSIVE';
     rule = 'minimum_sample_unmet';
-  } else if (Object.values(measures).every((measure) => measure.met)) {
-    outcome = 'PROCEED';
-    rule = 'all_commercial_measures_met';
   } else if (
     values.topThreeProblem < 2 ||
     values.confirmedCatches === 0 ||
@@ -614,6 +681,9 @@ function evaluate(freeze, interviews, runs, findings, events, asOf, digest) {
   ) {
     outcome = 'STOP';
     rule = 'explicit_stop_condition';
+  } else if (Object.values(measures).every((measure) => measure.met)) {
+    outcome = 'PROCEED';
+    rule = 'all_commercial_measures_met';
   } else if (
     measures.topThreeProblem.met &&
     measures.confirmedCatches.met &&
@@ -640,7 +710,11 @@ function evaluate(freeze, interviews, runs, findings, events, asOf, digest) {
     decisionAt: asOf,
     decisionOwnerAlias: freeze.validationOwnerAlias,
     freezeSha256: digest,
-    window: { start: freeze.windowStart, end: freeze.windowEnd },
+    window: {
+      start: freeze.windowStart,
+      end: freeze.windowEnd,
+      evaluationAt: freeze.evaluationAt,
+    },
     frozenCohort: {
       interviewIds: freeze.interviewIds,
       repositories: freeze.repositories.map(
@@ -703,7 +777,9 @@ try {
   const options = parseArguments(process.argv.slice(2));
   const [freezePath, interviewsPath, runsPath, findingsPath, eventsPath] =
     options.paths;
-  const { freeze, source } = parseFreeze(freezePath);
+  const inputSources = options.paths.map((path) => readFileSync(path));
+  const source = inputSources[0].toString('utf8');
+  const { freeze } = parseFreeze(freezePath, source);
   const digest = sha256(source);
   if (freeze.status === 'frozen') {
     if (!/^[a-f0-9]{64}$/.test(options.expectedDigest))
@@ -713,19 +789,36 @@ try {
     if (options.expectedDigest !== digest)
       fail('freeze SHA-256 does not match the externally retained digest');
   }
-  const interviews = readRecords(interviewsPath, HEADERS.interviews);
-  const runs = readRecords(runsPath, HEADERS.runs);
-  const findings = readRecords(findingsPath, HEADERS.findings);
-  const events = readRecords(eventsPath, HEADERS.events);
+  const interviews = readRecords(
+    interviewsPath,
+    HEADERS.interviews,
+    inputSources[1].toString('utf8'),
+  );
+  const runs = readRecords(
+    runsPath,
+    HEADERS.runs,
+    inputSources[2].toString('utf8'),
+  );
+  const findings = readRecords(
+    findingsPath,
+    HEADERS.findings,
+    inputSources[3].toString('utf8'),
+  );
+  const events = readRecords(
+    eventsPath,
+    HEADERS.events,
+    inputSources[4].toString('utf8'),
+  );
   validateInterviews(interviews, interviewsPath);
   validateRuns(runs, runsPath);
   validateFindings(findings, findingsPath);
   validateEvents(events, eventsPath);
+  timestamp({ as_of: options.asOf }, 'as_of', '--as-of');
   if (
-    !ABSOLUTE_TIMESTAMP.test(options.asOf) ||
-    Number.isNaN(Date.parse(options.asOf))
+    freeze.status === 'frozen' &&
+    Date.parse(options.asOf) > Date.parse(freeze.evaluationAt)
   )
-    fail('--as-of must be a UTC ISO 8601 timestamp ending in Z');
+    fail('--as-of must not be after evaluationAt');
   const decision = {
     ...evaluate(
       freeze,
@@ -738,10 +831,10 @@ try {
     ),
     inputSha256: {
       freeze: digest,
-      interviews: sha256(readFileSync(interviewsPath)),
-      runs: sha256(readFileSync(runsPath)),
-      findings: sha256(readFileSync(findingsPath)),
-      events: sha256(readFileSync(eventsPath)),
+      interviews: sha256(inputSources[1]),
+      runs: sha256(inputSources[2]),
+      findings: sha256(inputSources[3]),
+      events: sha256(inputSources[4]),
     },
   };
   const serialized = `${JSON.stringify(decision, undefined, 2)}\n`;

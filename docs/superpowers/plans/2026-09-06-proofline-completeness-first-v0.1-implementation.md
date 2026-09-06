@@ -1032,14 +1032,24 @@ The description command changes only the public description; it must not change 
 Use exact headers:
 
 ```csv
-interview_id,team_alias,booked_at,conducted_at,qualified,role,playwright_github_actions,top_three_problem,budget_authority,price_probe_response,evidence_url
+interview_id,participant_alias,team_alias,booked_at,conducted_at,qualified,role,playwright_github_actions,top_three_problem,budget_authority,price_probe_response,alternative_wedge_alias,evidence_ref
 ```
 
 ```csv
-observation_id,team_alias,repository_alias,pr_alias,observed_at,disease_signal,proofline_status,classification,previously_unknown,customer_confirmed,false_positive,resolved_at,evidence_url
+run_id,team_alias,repository_alias,pr_alias,observed_at,disease_qualified,proofline_status,evidence_ref
+```
+
+```csv
+finding_id,run_id,test_identity_hash,classification,previously_unknown,customer_confirmed,false_positive,resolved_at,evidence_ref
+```
+
+```csv
+event_id,team_alias,event_type,occurred_at,value,evidence_ref
 ```
 
 Add a dependency-free Node ESM evaluator under `packages/test-fixtures/scripts/validate-pilot-data.mjs` that validates the frozen manifest and normalized ledgers, rejects duplicate participants/PRs/findings, enforces closed enums and timestamps, verifies the externally retained freeze digest, calculates every gate measure, and writes the deterministic decision record. Keep `.mjs` consciously for consistency with existing repository maintenance scripts; typed production and evidence-domain code remains TypeScript.
+
+The manifest freezes `evaluationAt` between `windowEnd` and 24 hours later. The evaluator reads every file once and hashes the exact bytes it parses, rejects unknown manifest/repository keys and impossible calendar timestamps, rejects contradictory retention/removal state, treats earlier `--as-of` values as non-final observation, and rejects values after `evaluationAt`.
 
 - [ ] **Step 2: Replace the gate text exactly from the spec**
 

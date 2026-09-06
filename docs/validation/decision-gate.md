@@ -26,8 +26,9 @@ The clock starts only after all preflight conditions are represented in a
 5. Authorization, disease-signal, and evidence-handling `E-...` references are
    present for every repository. Production secrets and customer payloads are
    excluded.
-6. `windowEnd` is exactly 30 days after `windowStart`, both in UTC, and the
-   thresholds equal the published contract.
+6. `windowEnd` is exactly 30 days after `windowStart`, both in canonical UTC.
+   `evaluationAt` is frozen between `windowEnd` and 24 hours afterward as the
+   only final-decision cutoff, and the thresholds equal the published contract.
 
 After finalizing the freeze file, calculate its digest with
 `shasum -a 256 pilot-freeze.json` and retain that digest in a separate,
@@ -61,14 +62,19 @@ pull-request numbers, customer payloads, or raw URLs in these ledgers.
   Only `incomplete`, `absent`, and `no_evidence` can be confirmed
   not-executed catches. `runtime_skipped` and `retry_masked` stay visible but do
   not count toward that measure.
-- `team-events.csv` records `retention_day_30`, `noise_rating`, and
+- `team-events.csv` records one terminal value per team for each of
+  `retention_day_30`, `noise_rating`, and
   `removal_reason` events. Retention counts only at or after `windowEnd`, with
   value `enabled`. Noise uses `ignored`, `not_annoying`, `annoying`, or
-  `unusable`. Low-value removal uses `removal_reason,low_value`.
+  `unusable`. Low-value removal uses `removal_reason,low_value`. A team cannot
+  be both retained as `enabled` and removed for low value; contradictory state
+  fails validation rather than being resolved in favor of a commercial result.
 
 All IDs, participant aliases, repository/PR pairs, finding identities, and
-per-ledger evidence references are unique. Timestamps are absolute UTC values.
-All enums and booleans are closed sets enforced by the evaluator.
+per-ledger evidence references are unique. Timestamps are canonical UTC values;
+impossible calendar dates are rejected. All enums and booleans are closed sets.
+The freeze and each repository entry also reject unknown keys so private names,
+URLs, or ad hoc outcome fields cannot hide in the decision contract.
 
 ## Frozen measures
 
@@ -84,16 +90,19 @@ All enums and booleans are closed sets enforced by the evaluator.
 |   8 | Completed `$99/repo/month` probes with budget authority   |                 `>= 1` |
 |   9 | Per-team clean-summary noise                              |             diagnostic |
 
-The evaluator emits each numerator, threshold, result, included IDs, excluded
-IDs with reasons, noise records, frozen cohort, and SHA-256 digest of every
-input file. The generated decision record therefore pins the exact data used;
+The evaluator reads every input exactly once and derives parsing, validation,
+measures, and SHA-256 from those same immutable bytes. It emits each numerator,
+threshold, result, included IDs, excluded IDs with reasons, noise records,
+frozen cohort, and digest of every input file. The generated decision record
+therefore pins the exact data used;
 the private repository history and external freeze digest provide the audit
 trail. This is tamper-evident process evidence, not a claim that a local CSV can
 be made cryptographically immutable by itself.
 
 ## Execute the decision
 
-Use an explicit decision time so reruns are deterministic:
+Use the manifest's exact frozen `evaluationAt` as the final decision time. An
+earlier `--as-of` is a non-final progress view; a later value is rejected:
 
 ```sh
 node packages/test-fixtures/scripts/validate-pilot-data.mjs \
@@ -102,23 +111,26 @@ node packages/test-fixtures/scripts/validate-pilot-data.mjs \
   path/to/pilot-runs.csv \
   path/to/pilot-findings.csv \
   path/to/team-events.csv \
-  --as-of=2026-10-01T00:00:00Z \
+  --as-of=<exact-pilot-freeze.evaluationAt> \
   --expected-freeze-sha256=<externally-retained-digest> \
   --out=path/to/decision-record.json
 ```
 
-Before `windowEnd`, the result is `OBSERVING`. The only early `STOP` is all
-three frozen teams explicitly removing Proofline for low value.
+Before `evaluationAt`, the result is `OBSERVING`. The only early `STOP` is all
+three frozen teams explicitly removing Proofline for low value. Events after
+the explicit progress time are excluded, and events after `evaluationAt` can
+never enter this frozen decision.
 
-At or after `windowEnd`, rules execute once in this order:
+At `evaluationAt`, rules execute once in this order:
 
 1. `INCONCLUSIVE` if measure 1, 3, or 4 is unmet. Recruit a new versioned
    cohort/window and claim nothing.
-2. `PROCEED` if measures 1-8 all pass. This authorizes design of hosted history,
-   not implementation, revenue claims, or an OpenAI partnership.
-3. `STOP` if fewer than two participants rank the problem top-three, there are
+2. `STOP` if fewer than two participants rank the problem top-three, there are
    zero confirmed catches, an unresolved false positive exists, or every pilot
-   team removed Proofline for low value.
+   team removed Proofline for low value. All-team low-value removal has
+   precedence over every commercial measure.
+3. `PROCEED` if measures 1-8 all pass. This authorizes design of hosted history,
+   not implementation, revenue claims, or an OpenAI partnership.
 4. `NARROW` if the top-three and catch thresholds pass, `PROCEED` is false, no
    stop condition applies, and at least four qualified interviews independently
    point to the same `W-...` alternative wedge.

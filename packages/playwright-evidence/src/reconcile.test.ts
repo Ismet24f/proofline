@@ -12,7 +12,9 @@ import type { ReconciliationReport } from '@proofline/evidence-model';
 interface FixtureTest {
   id: string;
   status: 'expected' | 'unexpected' | 'flaky' | 'skipped';
-  attempts: Array<'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'>;
+  attempts: ReadonlyArray<
+    'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'
+  >;
   expectedStatus?: 'passed' | 'failed' | 'skipped' | 'timedOut' | 'interrupted';
 }
 
@@ -268,6 +270,134 @@ describe('reconcileEvidence', () => {
     ).toBe(1);
   });
 
+  it.each([
+    [
+      'executed_as_expected',
+      { id: 'case', status: 'expected', attempts: ['passed'] },
+      { id: 'case', status: 'expected', attempts: ['passed'] },
+      0,
+    ],
+    [
+      'retry_masked',
+      { id: 'case', status: 'expected', attempts: ['passed'] },
+      { id: 'case', status: 'flaky', attempts: ['failed', 'passed'] },
+      0,
+    ],
+    [
+      'failed',
+      { id: 'case', status: 'expected', attempts: ['passed'] },
+      { id: 'case', status: 'unexpected', attempts: ['failed'] },
+      0,
+    ],
+    [
+      'runtime_skipped',
+      { id: 'case', status: 'expected', attempts: ['passed'] },
+      { id: 'case', status: 'skipped', attempts: ['skipped'] },
+      1,
+    ],
+    [
+      'incomplete',
+      { id: 'case', status: 'expected', attempts: ['passed'] },
+      { id: 'case', status: 'skipped', attempts: ['interrupted'] },
+      1,
+    ],
+    [
+      'absent',
+      { id: 'case', status: 'expected', attempts: ['passed'] },
+      undefined,
+      1,
+    ],
+  ] as const)(
+    'applies report-only and enforce-evidence exit policy to %s',
+    async (classification, planned, observed, enforceCode) => {
+      for (const mode of ['report-only', 'enforce-evidence'] as const) {
+        const setup = await setupMatrix();
+        await rm(join(setup.workspace, 'artifacts'), { recursive: true });
+        await writeScope({
+          workspace: setup.workspace,
+          directory: 'single',
+          producer: { id: 'e2e', shard: { current: 1, total: 1 } },
+          planned: [planned],
+          observed: observed === undefined ? [] : [observed],
+        });
+
+        const report = await reconcileEvidence({
+          ...setup.options,
+          producers: 'e2e=1',
+          mode,
+          out: `${classification}-${mode}.json`,
+        });
+        expect(report.tests).toHaveLength(1);
+        expect(report.tests[0]?.classification).toBe(classification);
+        expect(report.exitDecision.code).toBe(
+          mode === 'report-only' ? 0 : enforceCode,
+        );
+      }
+    },
+  );
+
+  it.each(['report-only', 'enforce-evidence'] as const)(
+    'treats unexpected identities as an evidence gap in %s mode',
+    async (mode) => {
+      const setup = await setupMatrix();
+      await rm(join(setup.workspace, 'artifacts'), { recursive: true });
+      await writeScope({
+        workspace: setup.workspace,
+        directory: 'unexpected',
+        producer: { id: 'e2e', shard: { current: 1, total: 1 } },
+        planned: [],
+        observed: [{ id: 'extra', status: 'expected', attempts: ['passed'] }],
+      });
+
+      const report = await reconcileEvidence({
+        ...setup.options,
+        producers: 'e2e=1',
+        mode,
+        out: `unexpected-${mode}.json`,
+      });
+      expect(report.counts.unexpected).toBe(1);
+      expect(report.exitDecision.code).toBe(mode === 'report-only' ? 0 : 1);
+    },
+  );
+
+  it.each(['report-only', 'enforce-evidence'] as const)(
+    'applies exit policy to no_evidence in %s mode',
+    async (mode) => {
+      const setup = await setupMatrix();
+      await rm(join(setup.workspace, 'artifacts'), { recursive: true });
+      await writeScope({
+        workspace: setup.workspace,
+        directory: 'missing-evidence',
+        producer: { id: 'e2e', shard: { current: 1, total: 1 } },
+        planned: [{ id: 'case', status: 'expected', attempts: ['passed'] }],
+      });
+
+      const report = await reconcileEvidence({
+        ...setup.options,
+        producers: 'e2e=1',
+        mode,
+        out: `no-evidence-${mode}.json`,
+      });
+      expect(report.tests[0]?.classification).toBe('no_evidence');
+      expect(report.exitDecision.code).toBe(mode === 'report-only' ? 0 : 1);
+    },
+  );
+
+  it.each(['report-only', 'enforce-evidence'] as const)(
+    'returns code 2 for representative tool errors in %s mode',
+    async (mode) => {
+      const setup = await setupMatrix();
+      await writeFile(
+        join(setup.workspace, 'artifacts', 'z-e2e', 'report.json'),
+        '{}',
+      );
+
+      const report = await reconcileEvidence({ ...setup.options, mode });
+      expect(report.status).toBe('tool_error');
+      expect(report.exitDecision.code).toBe(2);
+    },
+  );
+
   it('is deterministic across artifact paths and manifest input order', async () => {
     const first = await setupMatrix();
     const second = await setupMatrix();
@@ -447,4 +577,40 @@ describe('reconcileEvidence', () => {
       exitDecision: { code: 2, reasonCodes: ['report_digest_mismatch'] },
     });
   });
+
+  it.each(['report-only', 'enforce-evidence'] as const)(
+    'fails closed when collected report semantics are contradictory in %s mode',
+    async (mode) => {
+      const setup = await setupMatrix();
+      const directory = join(setup.workspace, 'artifacts', 'z-e2e');
+      const reportPath = join(directory, 'report.json');
+      const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+        suites: Array<{
+          specs: Array<{ tests: Array<Record<string, unknown>> }>;
+        }>;
+      };
+      const test = report.suites[0]?.specs[0]?.tests[0];
+      if (test === undefined) throw new Error('fixture must contain a test');
+      Object.assign(test, {
+        status: 'flaky',
+        expectedStatus: 'passed',
+        results: [{ status: 'skipped' }, { status: 'passed' }],
+      });
+      await writeFile(reportPath, JSON.stringify(report));
+
+      const envelopePath = join(directory, 'envelope.json');
+      const envelope = JSON.parse(
+        await readFile(envelopePath, 'utf8'),
+      ) as Record<string, unknown>;
+      envelope.reportDigest = await sha256File(reportPath);
+      await writeFile(envelopePath, JSON.stringify(envelope));
+
+      const result = await reconcileEvidence({ ...setup.options, mode });
+      expect(result).toMatchObject({
+        status: 'tool_error',
+        counts: { toolErrors: 1, retryMasked: 0, knownTestGaps: 0 },
+        exitDecision: { code: 2, reasonCodes: ['artifact_invalid'] },
+      });
+    },
+  );
 });

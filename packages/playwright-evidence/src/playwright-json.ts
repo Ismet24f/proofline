@@ -100,9 +100,43 @@ function parseResult(value: unknown, path: string): PlaywrightResult {
   };
 }
 
+function computePlaywrightStatus(
+  test: Pick<PlaywrightTest, 'expectedStatus' | 'results'>,
+): PlaywrightTest['status'] {
+  let skipped = 0;
+  let expected = 0;
+  let unexpected = 0;
+
+  for (const result of test.results) {
+    if (result.status === 'interrupted') continue;
+    if (result.status === 'skipped' && test.expectedStatus === 'skipped') {
+      skipped += 1;
+    } else if (result.status === 'skipped') {
+      continue;
+    } else if (result.status === test.expectedStatus) {
+      expected += 1;
+    } else {
+      unexpected += 1;
+    }
+  }
+
+  if (expected === 0 && unexpected === 0) return 'skipped';
+  if (unexpected === 0) return 'expected';
+  if (expected === 0 && skipped === 0) return 'unexpected';
+  return 'flaky';
+}
+
 function validateTestSemantics(test: PlaywrightTest, path: string): void {
   const attempts = test.results.map((result) => result.status);
   const finalAttempt = attempts.at(-1);
+  const requireComputedStatus = (): void => {
+    const computedStatus = computePlaywrightStatus(test);
+    if (test.status !== computedStatus) {
+      throw new Error(
+        `${path} status ${test.status} does not match Playwright-computed status ${computedStatus}`,
+      );
+    }
+  };
 
   if (test.status === 'expected') {
     if (attempts.length !== 1) {
@@ -115,6 +149,7 @@ function validateTestSemantics(test: PlaywrightTest, path: string): void {
         `${path} with status expected must match expectedStatus in its result`,
       );
     }
+    requireComputedStatus();
     return;
   }
 
@@ -136,6 +171,7 @@ function validateTestSemantics(test: PlaywrightTest, path: string): void {
         `${path} with status flaky must contain an earlier unexpected result`,
       );
     }
+    requireComputedStatus();
     return;
   }
 
@@ -150,6 +186,7 @@ function validateTestSemantics(test: PlaywrightTest, path: string): void {
         `${path} with status unexpected final result must differ from expectedStatus`,
       );
     }
+    requireComputedStatus();
     return;
   }
 
@@ -162,6 +199,7 @@ function validateTestSemantics(test: PlaywrightTest, path: string): void {
       `${path} with status skipped has an unsupported result sequence`,
     );
   }
+  requireComputedStatus();
 }
 
 function parseTest(value: unknown, path: string): PlaywrightTest {

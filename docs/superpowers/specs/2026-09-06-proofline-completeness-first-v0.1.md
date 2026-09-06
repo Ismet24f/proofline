@@ -320,7 +320,7 @@ For every manifest producer/shard, reconciliation requires one valid fragment an
 Within one immutable revision and run only. Canonical key: `[projectName, playwrightTestId]`, where `playwrightTestId` is the built-in JSON `spec.id`.
 
 - In verified 1.62.1 output, `spec.id` already differs by project. `projectName` remains in the key as an explicit partition and defence-in-depth consistency check; Proofline does not claim it is required for ID uniqueness.
-- Test paths are POSIX and relative to the recorded `rootDir`; `rootDir` is stored repository-relative. Both roots and resolved files are rejected if they escape the workspace.
+- Test paths are POSIX metadata relative to the recorded `rootDir`; `rootDir` is stored repository-relative. These report-controlled display identities are lexically normalized and rejected on `..` escape. Proofline does not open them. Action input files and traversed artifact files are separately realpath-contained and symlink-rejected as described in §13.
 - Unnamed project → reserved `<default>`; a real project may not use that name.
 - `titlePath`, path, line, and column are retained for display and must agree between plan and result for the same key.
 - Playwright IDs are not claimed stable across commits. They are used only because reconciliation is restricted to the same immutable revision and run.
@@ -332,6 +332,8 @@ Within one immutable revision and run only. Canonical key: `[projectName, playwr
 ## 11. Classification — Playwright outcome semantics
 
 Raw `status` is insufficient: `test.fail()` makes a failing result _expected_, and a runtime `test.skip()` looks like a planned skip. Classification combines the plan's `expectedStatus` with per-attempt statuses and the derived outcome (`expected`, `unexpected`, `flaky`, `skipped`).
+
+Before classification, Proofline independently recomputes Playwright 1.62.x's outcome from `expectedStatus` and every raw attempt and requires exact equality with the report's outcome. It then applies the stricter terminal-attempt rules below. Any contradiction, including `flaky` paired with `skipped → passed` or `interrupted → passed`, is an invalid-report tool error and can never become `retry_masked`.
 
 | Classification         | Derivation                                                                                                                     | Evidence gap                    |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
@@ -426,7 +428,7 @@ Unit tests for parsers and schemas are necessary and insufficient. Playwright be
 7. `test.skip()` / `test.fixme()` at declaration → `planned_disabled`.
 8. `test.skip(condition, reason)` invoked inside the test body → `runtime_skipped`, distinct from 7.
 9. `test.fail()` failing as declared → `executed_as_expected`; `test.fail()` unexpectedly passing → `failed`.
-10. First-attempt pass vs retry pass → `executed_as_expected` vs `retry_masked`.
+10. First-attempt pass vs retry pass → `executed_as_expected` vs `retry_masked`; semantically contradictory retry histories fail as an invalid-report tool error in collect, reconcile, and the bundled action.
 11. Terminal failure and timeout → `failed`, never a completeness gap.
 12. `SIGINT` mid-run with partial report → the interrupted attempt and active planned tests with zero attempts are `incomplete`; already-observed runtime skips remain `runtime_skipped`. `SIGINT` during Playwright compilation may produce no JSON; an unreadable/missing artifact is `no_evidence`.
 13. Unexpected and duplicate identities detected.
@@ -434,7 +436,7 @@ Unit tests for parsers and schemas are necessary and insufficient. Playwright be
 15. Same inputs → deterministic record ordering and identities after excluding truthful timestamps and run-specific digests.
 16. `--reporter=html,json` and config-array multi-reporter both preserve existing reporters.
 17. Consumer fixture repo installs no Proofline package.
-18. `report-only` vs `enforce-evidence` exit codes across every classification.
+18. `report-only` vs `enforce-evidence` exit codes independently asserted for every primary classification, unexpected identities, and representative tool errors.
 19. Summary and action outputs equal JSON counts.
 20. Plan `--project=chromium`, execution `--project=firefox` → `selection_mismatch` tool error in `collect` and `reconcile`, naming the field.
 21. Plan reads `expectedStatus`, not `status`: list-mode report with all `status: skipped` yields correct active/disabled split.
@@ -472,7 +474,7 @@ At **30 recorded hours** into A+B, hold a scope review. Permitted cuts, in order
 - **Disease-signal qualification:** each pilot repository has ≥1 of: conditional test jobs, matrix or shards, a skip that can occur during test execution, or `retries ≥ 1`. Workflow-level path filtering alone does not qualify because Proofline cannot evaluate a workflow that never starts.
 - Each pilot repository freezes its Playwright dependency to a tested 1.62.x lockfile for the observation window. A requested minor upgrade triggers the compatibility matrix as a same-day task; observations for that repository pause until it passes.
 - No production secrets or customer payloads enter the study.
-- The cohort, window, repository-team mapping, evidence references, lockfile SHAs, and thresholds are frozen in `pilot-freeze.json`; its SHA-256 is retained separately and required by the evaluator.
+- The cohort, window, `evaluationAt` cutoff, repository-team mapping, evidence references, lockfile SHAs, and thresholds are frozen in `pilot-freeze.json`; its SHA-256 is retained separately and required by the evaluator. `evaluationAt` is no earlier than `windowEnd` and no later than 24 hours afterward, allowing one bounded day-30 capture period.
 
 Preflight not met → keep recruiting; not evidence about the problem.
 
@@ -495,17 +497,19 @@ Thresholds freeze at preflight. Later records never change them.
 Evidence is normalized across `interviews.csv`, `pilot-runs.csv`,
 `pilot-findings.csv`, and `team-events.csv`. Unique participant aliases,
 repository/PR pairs, and run/test identity hashes prevent duplicate counting.
-Closed enums make every measure computable. The dependency-free evaluator
-validates all contracts, pins the SHA-256 of every input in its decision record,
+Closed enums and exact allowed-key sets make every measure computable without accepting hidden freeze metadata. Canonical UTC timestamps reject impossible calendar dates. Each team may record each terminal event type once; enabled retention contradicting low-value removal is rejected. The dependency-free evaluator
+reads each input once, validates and evaluates those immutable bytes, pins their SHA-256 in its decision record,
 lists included and excluded IDs with reasons, and executes the mutually
 exclusive rules below in order. `docs/validation/decision-gate.md` is the
 operational authority for field contracts and the exact command.
 
 ### 19.3 Outcomes
 
+Before `evaluationAt`, the evaluator may emit `OBSERVING` (or the sole early `STOP` when all teams removed Proofline for low value). It rejects evaluation after the frozen cutoff. Final rules run only at `evaluationAt`, so identical evidence bytes cannot acquire a different final outcome through hindsight timing.
+
 - **PROCEED** — rows 1–8 met, classifications trusted, retention voluntary. Authorizes hosted-history _design_ only.
 - **NARROW** — rows 2 and 5 meet their thresholds, no stop rule applies, and at least four qualified interviews independently identify the same frozen `W-...` alternative wedge; rewrite §4 first.
-- **STOP** — rows 1, 3, 4 met and (row 2 < 2, or row 5 = 0 in disease-qualified repos, or teams remove the action for low value). Legitimate: the problem is real but rare and §2's rollup suffices.
+- **STOP** — rows 1, 3, 4 met and (row 2 < 2, row 5 = 0 in disease-qualified repos, an unresolved false positive exists, or every team removed the action for low value). All-team low-value removal has precedence over `PROCEED`. Legitimate: the problem is real but rare and §2's rollup suffices.
 - **INCONCLUSIVE** — rows 1, 3, or 4 unmet. Change channel or extend. Claim nothing.
 
 Internal-only installs, retrospective threshold edits, and AI opinions never count.

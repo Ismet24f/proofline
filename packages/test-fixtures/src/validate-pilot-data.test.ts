@@ -42,6 +42,7 @@ function frozenManifest() {
     status: 'frozen',
     windowStart: '2026-09-01T00:00:00Z',
     windowEnd: '2026-10-01T00:00:00Z',
+    evaluationAt: '2026-10-02T00:00:00Z',
     validationOwnerAlias: 'P-OWNER',
     interviewIds: Array.from(
       { length: 8 },
@@ -71,7 +72,8 @@ interface PilotData {
 function validate(
   data: PilotData,
   expectedDigest?: string,
-  asOf = '2026-10-01T00:00:00Z',
+  asOf = '2026-10-02T00:00:00Z',
+  replacementInterviews?: string[],
 ): unknown {
   const workspace = mkdtempSync(join(tmpdir(), 'proofline-pilot-data-'));
   workspaces.push(workspace);
@@ -90,17 +92,46 @@ function validate(
   );
   const digest =
     expectedDigest ?? createHash('sha256').update(freezeSource).digest('hex');
+  const preloadArguments: string[] = [];
+  const environment = { ...process.env };
+  if (replacementInterviews !== undefined) {
+    const hookPath = join(workspace, 'replace-second-read.mjs');
+    writeFileSync(
+      hookPath,
+      [
+        "import fs from 'node:fs';",
+        "import { syncBuiltinESMExports } from 'node:module';",
+        'const originalReadFileSync = fs.readFileSync;',
+        'let matchingReads = 0;',
+        'fs.readFileSync = function readFileSync(path, options) {',
+        '  if (String(path) !== process.env.PROOFLINE_SWAP_PATH)',
+        '    return originalReadFileSync(path, options);',
+        '  matchingReads += 1;',
+        '  if (matchingReads === 1) return originalReadFileSync(path, options);',
+        "  const replacement = Buffer.from(process.env.PROOFLINE_SWAP_BASE64, 'base64');",
+        "  return typeof options === 'string' ? replacement.toString(options) : replacement;",
+        '};',
+        'syncBuiltinESMExports();',
+      ].join('\n'),
+    );
+    preloadArguments.push('--import', hookPath);
+    environment.PROOFLINE_SWAP_PATH = files[0];
+    environment.PROOFLINE_SWAP_BASE64 = Buffer.from(
+      `${[HEADERS.interviews, ...replacementInterviews].join('\n')}\n`,
+    ).toString('base64');
+  }
   return JSON.parse(
     execFileSync(
       process.execPath,
       [
+        ...preloadArguments,
         SCRIPT,
         freezePath,
         ...files,
         `--as-of=${asOf}`,
         `--expected-freeze-sha256=${digest}`,
       ],
-      { encoding: 'utf8' },
+      { encoding: 'utf8', env: environment },
     ),
   ) as unknown;
 }
@@ -166,6 +197,7 @@ describe('validate-pilot-data', () => {
     expect(result).toMatchObject({
       outcome: 'PROCEED',
       rule: 'all_commercial_measures_met',
+      window: { evaluationAt: '2026-10-02T00:00:00Z' },
       measures: {
         completedQualifiedInterviews: { value: 8, met: true },
         pilotRepositories: { value: 3, met: true },
@@ -200,7 +232,7 @@ describe('validate-pilot-data', () => {
         ...data,
         runs: data.runs.slice(0, 59),
       }),
-      '2026-10-01T00:00:00Z',
+      '2026-10-02T00:00:00Z',
     ],
     [
       'STOP',
@@ -208,7 +240,7 @@ describe('validate-pilot-data', () => {
         ...data,
         findings: [],
       }),
-      '2026-10-01T00:00:00Z',
+      '2026-10-02T00:00:00Z',
     ],
     [
       'NARROW',
@@ -224,7 +256,7 @@ describe('validate-pilot-data', () => {
           (event) => !event.includes('retention_day_30'),
         ),
       }),
-      '2026-10-01T00:00:00Z',
+      '2026-10-02T00:00:00Z',
     ],
   ])('computes the mutually exclusive %s branch', (outcome, mutate, asOf) => {
     expect(validate(mutate(completeData()), undefined, asOf)).toMatchObject({
@@ -272,5 +304,106 @@ describe('validate-pilot-data', () => {
     const freeze = frozenManifest();
     if (freeze.repositories[1]) freeze.repositories[1].teamAlias = 'T-001';
     expect(() => validate({ freeze })).toThrow(/distinct team/);
+  });
+
+  it('hashes the same interview bytes that it evaluates', () => {
+    const data = completeData();
+    const replacement = data.interviews.map((row) => {
+      const fields = row.split(',');
+      fields[8] = 'no';
+      return fields.join(',');
+    });
+    const source = `${[HEADERS.interviews, ...data.interviews].join('\n')}\n`;
+    const result = validate(data, undefined, undefined, replacement) as {
+      inputSha256: { interviews: string };
+      measures: { topThreeProblem: { value: number } };
+    };
+
+    expect(result.measures.topThreeProblem.value).toBe(4);
+    expect(result.inputSha256.interviews).toBe(
+      createHash('sha256').update(source).digest('hex'),
+    );
+  });
+
+  it('waits for the frozen evaluation cutoff before producing a final decision', () => {
+    expect(
+      validate(completeData(), undefined, '2026-10-01T00:00:00Z'),
+    ).toMatchObject({ outcome: 'OBSERVING', rule: 'decision_cutoff_pending' });
+  });
+
+  it('rejects evaluation after the frozen cutoff', () => {
+    expect(() =>
+      validate(completeData(), undefined, '2026-10-02T00:00:01Z'),
+    ).toThrow(/must not be after evaluationAt/);
+  });
+
+  it('rejects retention that contradicts low-value removal', () => {
+    const data = completeData();
+    data.events.push(
+      'EV-003,T-001,removal_reason,2026-09-25T00:00:00Z,low_value,E-REMOVAL-1',
+      'EV-004,T-002,removal_reason,2026-09-25T00:00:00Z,low_value,E-REMOVAL-2',
+      'EV-005,T-003,removal_reason,2026-09-25T00:00:00Z,low_value,E-REMOVAL-3',
+    );
+
+    expect(() => validate(data)).toThrow(
+      /retention contradicts low-value removal/,
+    );
+  });
+
+  it('rejects impossible calendar timestamps', () => {
+    const data = completeData();
+    data.interviews[0] =
+      data.interviews[0]?.replace(
+        '2026-08-20T09:00:00Z',
+        '2026-02-31T09:00:00Z',
+      ) ?? '';
+
+    expect(() => validate(data)).toThrow(/canonical UTC ISO 8601 timestamp/);
+  });
+
+  it('rejects noncanonical fractional timestamps', () => {
+    const data = completeData();
+    data.interviews[0] =
+      data.interviews[0]?.replace(
+        '2026-08-20T09:00:00Z',
+        '2026-08-20T09:00:00.1Z',
+      ) ?? '';
+
+    expect(() => validate(data)).toThrow(/canonical UTC ISO 8601 timestamp/);
+  });
+
+  it('returns STOP when every pilot team removed Proofline for low value', () => {
+    const data = completeData();
+    data.events = [
+      'EV-003,T-001,removal_reason,2026-09-25T00:00:00Z,low_value,E-REMOVAL-1',
+      'EV-004,T-002,removal_reason,2026-09-25T00:00:00Z,low_value,E-REMOVAL-2',
+      'EV-005,T-003,removal_reason,2026-09-25T00:00:00Z,low_value,E-REMOVAL-3',
+    ];
+
+    expect(validate(data)).toMatchObject({
+      outcome: 'STOP',
+      rule: 'explicit_stop_condition',
+    });
+  });
+
+  it.each([
+    ['top-level', () => ({ ...frozenManifest(), customerName: 'Acme' })],
+    [
+      'repository',
+      () => {
+        const freeze = frozenManifest();
+        const repository = freeze.repositories[0];
+        if (repository === undefined)
+          throw new Error('fixture must contain a repository');
+        Object.assign(repository, {
+          repositoryUrl: 'https://example.test/private',
+        });
+        return freeze;
+      },
+    ],
+  ])('rejects unknown %s freeze keys', (_scope, makeFreeze) => {
+    expect(() => validate({ freeze: makeFreeze() })).toThrow(
+      /contains unsupported fields/,
+    );
   });
 });

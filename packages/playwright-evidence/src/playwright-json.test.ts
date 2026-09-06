@@ -152,6 +152,36 @@ describe('parsePlaywrightJson', () => {
       [{ status: 'passed' }, { status: 'passed' }],
       'must contain an earlier unexpected result',
     ],
+    [
+      'flaky',
+      'passed',
+      [{ status: 'skipped' }, { status: 'passed' }],
+      'does not match Playwright-computed status expected',
+    ],
+    [
+      'flaky',
+      'passed',
+      [{ status: 'interrupted' }, { status: 'passed' }],
+      'does not match Playwright-computed status expected',
+    ],
+    [
+      'flaky',
+      'failed',
+      [{ status: 'skipped' }, { status: 'failed' }],
+      'does not match Playwright-computed status expected',
+    ],
+    [
+      'expected',
+      'passed',
+      [{ status: 'failed' }, { status: 'passed' }],
+      'exactly one result',
+    ],
+    [
+      'flaky',
+      'passed',
+      [{ status: 'passed' }, { status: 'failed' }],
+      'final result must match expectedStatus',
+    ],
     ['unexpected', 'passed', [], 'at least one result'],
     [
       'unexpected',

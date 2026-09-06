@@ -285,6 +285,29 @@ describe('collectEvidence', () => {
     });
   });
 
+  it('rejects a report whose flaky status contradicts its raw attempts', async () => {
+    const setup = await setupArtifacts();
+    const test = setup.report.suites[0]?.specs[0]?.tests[0];
+    if (test === undefined || test === null || typeof test !== 'object') {
+      throw new Error('fixture must contain a test object');
+    }
+    Object.assign(test, {
+      status: 'flaky',
+      expectedStatus: 'passed',
+      results: [{ status: 'skipped' }, { status: 'passed' }],
+    });
+    await writeFile(
+      setup.reportPath,
+      `${JSON.stringify(setup.report, undefined, 2)}\n`,
+    );
+
+    await expect(collectEvidence(setup.options)).rejects.toMatchObject({
+      name: 'ProoflineToolError',
+      code: 'invalid_report',
+    });
+    await expect(stat(setup.out)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('writes explicit unavailable evidence when the plan is missing', async () => {
     const setup = await setupArtifacts();
     await rm(setup.planPath);
