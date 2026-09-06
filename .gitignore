@@ -10,3 +10,4 @@ test-results/
 **/.proofline/inventory.json
 **/.proofline/reports/
 .turbo/
+.proofline-evidence/
