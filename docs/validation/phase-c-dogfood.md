@@ -45,6 +45,14 @@ fields are blank. For a `mismatch` row, the count is positive. It remains a
 release blocker until both `resolved_at` and `resolution_evidence_ref` identify
 a verified fix. Resolving a mismatch does not erase the original observation.
 
+### Non-counting baseline
+
+PR #2 and its successful self-test run `34040683344` do not count toward the
+20-PR threshold. The retained producer artifacts omit the final reconciliation
+JSON, and the happy-path reconciliation used `enforce-evidence` rather than the
+required `report-only` mode. This evidence proves conformance but cannot satisfy
+the Phase C observation contract. The public ledger therefore remains empty.
+
 ## Per-PR cross-check protocol
 
 1. Confirm the workflow belongs to the recorded repository/PR and the action

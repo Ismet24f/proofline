@@ -126,25 +126,30 @@ git commit -m "feat: make Phase C readiness executable"
 - Modify: `docs/roadmap.md`
 - Modify: `docs/validation/phase-c-observations.csv`
 - Modify: `docs/validation/phase-c-dogfood.md`
+- Modify: `.github/workflows/proofline-self-test.yml`
 
 **Interfaces:**
 
 - Consumes merged commit `0ed535430d5db541d376ccadae624d7f856583a9` and its successful CI/self-test runs.
 - Produces one honest observation only if the raw Playwright artifacts and resulting classifications can be fully reconstructed and cross-checked.
 
-- [ ] **Step 1: Correct the README status**
+- [x] **Step 1: Correct the README status**
 
 Replace “await independent review” with the verified state: independently reviewed, merged, and entering Phase C dogfood. Keep `v0.1.0` explicitly unreleased and market status `promising, not proven`.
 
-- [ ] **Step 2: Record live merge workflow evidence**
+- [x] **Step 2: Record live merge workflow evidence**
 
 In `docs/roadmap.md`, link CI run `34040951579` and self-test run `34040951549` for merge commit `0ed535430d5db541d376ccadae624d7f856583a9`, then check the two corresponding release-checklist items.
 
-- [ ] **Step 3: Download and cross-check PR #2 evidence**
+- [x] **Step 3: Inspect PR #2 evidence without inflating the count**
 
 Download artifacts from the retained PR self-test run, reconstruct the reconciliation report with the reviewed commit, compare every classification with raw Playwright JSON and workflow topology, and record `OBS-001` only if the check is complete. If required artifacts are absent, document PR #2 as non-counting instead of manufacturing a row.
 
-- [ ] **Step 4: Run the public readiness gate**
+- [x] **Step 4: Retain a report-only reconciliation for future observations**
+
+Change the successful three-shard reconciliation in `.github/workflows/proofline-self-test.yml` from `enforce-evidence` to `report-only`. Upload `consumer-happy.json` as `proofline-dogfood-reconciliation` with 90-day retention so a reviewer can compare it with the already retained plan, envelope, and raw Playwright reports. Preserve the existing assertions and adversarial jobs.
+
+- [x] **Step 5: Run the public readiness gate**
 
 ```bash
 pnpm --filter @proofline/test-fixtures validate:phase-c
@@ -152,10 +157,10 @@ pnpm --filter @proofline/test-fixtures validate:phase-c
 
 Expected: `PHASE_C_OBSERVING`, with either zero or one distinct genuine PR and consumer status `draft`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
-git add README.md docs/roadmap.md docs/validation/phase-c-observations.csv docs/validation/phase-c-dogfood.md
+git add .github/workflows/proofline-self-test.yml README.md docs/roadmap.md docs/validation/phase-c-observations.csv docs/validation/phase-c-dogfood.md
 git commit -m "docs: start Phase C dogfood"
 ```
 
