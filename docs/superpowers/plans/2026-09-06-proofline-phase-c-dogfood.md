@@ -77,11 +77,11 @@ git commit -m "docs: define Phase C dogfood evidence"
 - Outcomes: `PHASE_C_OBSERVING` or `PHASE_C_READY`
 - `counts` keys: `distinctPullRequests`, `matchedObservations`, `resolvedMismatchObservations`, `unresolvedMismatchObservations`, `requiredPullRequests`
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
 Add tests proving that public drafts return `PHASE_C_OBSERVING`, 20 distinct matched observations plus a verified consumer return `PHASE_C_READY`, and 19 observations remain observing.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 ```bash
 pnpm --filter @proofline/test-fixtures exec vitest run src/validate-phase-c.test.ts
@@ -89,19 +89,19 @@ pnpm --filter @proofline/test-fixtures exec vitest run src/validate-phase-c.test
 
 Expected: FAIL because `validate-phase-c.mjs` does not exist.
 
-- [ ] **Step 3: Add adversarial failing tests**
+- [x] **Step 3: Add adversarial failing tests**
 
 Reject duplicate repository/PR pairs, noncanonical UTC timestamps, unknown keys or headers, non-opaque aliases, unsupported Playwright minors, any mode other than `report-only`, invalid statuses, negative or non-integer counts, `proofline_records !== raw_records_checked`, `matched` with nonzero false classifications, `mismatch` with zero false classifications, unresolved mismatches, invalid SHA-1/SHA-256 values, and a consumer marked verified without fresh-clone/no-package/success evidence.
 
-- [ ] **Step 4: Implement the minimal validator**
+- [x] **Step 4: Implement the minimal validator**
 
 Read each input once as a `Buffer`; parse and hash those exact bytes. Validate the closed contracts. Count distinct repository/PR pairs. Emit `PHASE_C_READY` only when at least 20 observations are valid, every record was cross-checked, every mismatch has canonical `resolved_at` plus `resolution_evidence_ref`, and the consumer record is fully verified. Do not perform network access or infer market demand.
 
-- [ ] **Step 5: Add the package command**
+- [x] **Step 5: Add the package command**
 
 Add `validate:phase-c` to `packages/test-fixtures/package.json` with value `node scripts/validate-phase-c.mjs`.
 
-- [ ] **Step 6: Run focused GREEN verification**
+- [x] **Step 6: Run focused GREEN verification**
 
 ```bash
 pnpm --filter @proofline/test-fixtures exec vitest run src/validate-phase-c.test.ts
@@ -111,7 +111,7 @@ pnpm --filter @proofline/test-fixtures typecheck
 
 Expected: all commands pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/test-fixtures/package.json packages/test-fixtures/scripts/validate-phase-c.mjs packages/test-fixtures/src/validate-phase-c.test.ts

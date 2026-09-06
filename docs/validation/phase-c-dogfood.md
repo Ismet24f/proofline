@@ -84,4 +84,7 @@ pnpm --filter @proofline/test-fixtures validate:phase-c
 `PHASE_C_OBSERVING` is expected until at least 20 distinct PR observations are
 valid, every classification has been cross-checked, no mismatch is unresolved,
 and the separate consumer record is verified. `PHASE_C_READY` permits a release
-review; it does not create or authorize a tag by itself.
+review; it does not create or authorize a tag by itself. Every local evaluator
+result is explicitly `non_authoritative` because the alias-only inputs and
+evidence references are operator supplied. An independent reviewer must inspect
+the protected artifacts and confirm their digests before accepting readiness.
