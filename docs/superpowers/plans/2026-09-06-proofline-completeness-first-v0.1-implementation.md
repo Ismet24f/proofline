@@ -1049,7 +1049,7 @@ event_id,team_alias,event_type,occurred_at,value,evidence_ref
 
 Add a dependency-free Node ESM evaluator under `packages/test-fixtures/scripts/validate-pilot-data.mjs` that validates the frozen manifest and normalized ledgers, rejects duplicate participants/PRs/findings, enforces closed enums and timestamps, verifies the externally retained freeze digest, calculates every gate measure, and writes the deterministic decision record. Keep `.mjs` consciously for consistency with existing repository maintenance scripts; typed production and evidence-domain code remains TypeScript.
 
-The manifest freezes `evaluationAt` between `windowEnd` and 24 hours later. The evaluator reads every file once and hashes the exact bytes it parses, rejects unknown manifest/repository keys and impossible calendar timestamps, rejects contradictory retention/removal state, treats earlier `--as-of` values as non-final observation, and rejects values after `evaluationAt`.
+The manifest freezes `evaluationAt` between `windowEnd` and 24 hours later. The evaluator reads every file once and hashes the exact bytes it parses, rejects unknown manifest/repository keys and impossible calendar timestamps, rejects contradictory retention/removal state, treats earlier `--as-of` values as non-final observation, and rejects values after `evaluationAt`. Its result is always `non_authoritative` because local time and `--as-of` are operator supplied. A candidate outcome authorizes nothing until an independent reviewer verifies that protected history contained all five input digests by `evaluationAt` and an external timestamped record binds the reviewed commit, decision digest, and freeze digest.
 
 - [ ] **Step 2: Replace the gate text exactly from the spec**
 
@@ -1061,7 +1061,7 @@ Delete `commitment-register.csv`, `field-dictionary.md`, `installation-scorecard
 
 - [ ] **Step 4: Add the narrow roadmap and release checklist**
 
-Roadmap stages are `v0.1 local completeness`, `30-day pilot`, and `hosted-history design only after PROCEED`. Copy every non-goal from spec §20. The release checklist requires clean Node 22/24 checks, deterministic bundle, clean consumer fixture, live workflow run URLs, immutable `v0.1.0` tag plan, floating `v0.1` update plan, checksums, and dependency notices. It must explicitly say the tag is not created in this task.
+Roadmap stages are `v0.1 local completeness`, `30-day pilot`, and `hosted-history design only after independently chronology-verified PROCEED`. Copy every non-goal from spec §20. The release checklist requires clean Node 22/24 checks, deterministic bundle, clean consumer fixture, live workflow run URLs, immutable `v0.1.0` tag plan, floating `v0.1` update plan, checksums, and dependency notices. It must explicitly say the tag is not created in this task.
 
 - [ ] **Step 5: Run final repository verification**
 

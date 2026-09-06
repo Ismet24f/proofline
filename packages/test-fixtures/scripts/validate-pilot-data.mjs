@@ -72,6 +72,7 @@ const QUALIFIED_ROLES = new Set([
   'release_owner',
   'engineering_manager',
   'head_of_qa',
+  'other',
 ]);
 const PRICE_RESPONSES = new Set(['accept', 'consider', 'reject', 'declined']);
 const DISEASE_SIGNALS = new Set([
@@ -97,8 +98,7 @@ const EVENT_VALUES = {
   noise_rating: new Set(['ignored', 'not_annoying', 'annoying', 'unusable']),
   removal_reason: new Set(['low_value', 'other']),
 };
-const ABSOLUTE_TIMESTAMP =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+const ABSOLUTE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const EVIDENCE_REFERENCE = /^E-[A-Za-z0-9_-]+$/;
@@ -239,8 +239,8 @@ function validateInterviews(records, filePath) {
       'budget_authority',
     ])
       bool(record, field, at);
-    if (record.qualified === 'yes' && !QUALIFIED_ROLES.has(record.role))
-      fail(`${at}: qualified=yes requires an allowed role`);
+    if (!QUALIFIED_ROLES.has(record.role))
+      fail(`${at}: role must use an allowed value`);
     if (
       record.qualified === 'yes' &&
       record.playwright_github_actions !== 'yes'
@@ -252,15 +252,25 @@ function validateInterviews(records, filePath) {
     )
       fail(`${at}: conducted_at cannot precede booked_at`);
     if (
+      record.price_probe_response !== '' &&
+      !PRICE_RESPONSES.has(record.price_probe_response)
+    )
+      fail(`${at}: price_probe_response must be blank or use an allowed value`);
+    if (
       record.budget_authority === 'yes' &&
       record.conducted_at &&
-      !PRICE_RESPONSES.has(record.price_probe_response)
+      record.price_probe_response === ''
     )
       fail(
         `${at}: a completed budget-authority interview requires a controlled price_probe_response`,
       );
-    if (record.budget_authority === 'no' && record.price_probe_response !== '')
-      fail(`${at}: price_probe_response requires budget_authority=yes`);
+    if (
+      record.price_probe_response !== '' &&
+      (record.budget_authority !== 'yes' || record.conducted_at === '')
+    )
+      fail(
+        `${at}: price_probe_response requires a conducted budget-authority interview`,
+      );
     evidence(record, at);
   });
 }
@@ -829,6 +839,10 @@ try {
       options.asOf,
       digest,
     ),
+    authority: {
+      status: 'non_authoritative',
+      chronology: 'external_verification_required',
+    },
     inputSha256: {
       freeze: digest,
       interviews: sha256(inputSources[1]),

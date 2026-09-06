@@ -87,7 +87,7 @@ Proofline's value begins after workflow-level scheduling and is concentrated in 
 - **User:** QA lead / SDET / release owner on Playwright + GitHub Actions, especially with conditional jobs, matrices, shards, or runtime skips.
 - **Buyer hypothesis:** engineering manager, Head of QA, or compliance-adjacent engineering leader owning release risk. Unvalidated until someone with budget authority discusses a paid pilot.
 - **Job:** when Playwright CI completes, show whether the run produced evidence for every test it planned, name the reason for every gap, and expose the result to humans and automation.
-- **Commercial boundary:** action and reconciliation stay open source forever. Paid services are authorized only by a `PROCEED` gate outcome.
+- **Commercial boundary:** action and reconciliation stay open source forever. Paid-service design is authorized only by an independently chronology-verified `PROCEED` gate outcome.
 
 ---
 
@@ -503,11 +503,19 @@ lists included and excluded IDs with reasons, and executes the mutually
 exclusive rules below in order. `docs/validation/decision-gate.md` is the
 operational authority for field contracts and the exact command.
 
+The evaluator always labels its result `non_authoritative`: its `--as-of` value
+and local clock are operator supplied, so deterministic evaluation proves which
+bytes produced a result but not when those bytes existed. Before any candidate
+outcome can authorize Stage 3, an independent reviewer must verify that
+protected history contained the five exact input digests no later than
+`evaluationAt`, and that an external timestamped record binds the reviewed
+commit, decision digest, and freeze digest.
+
 ### 19.3 Outcomes
 
-Before `evaluationAt`, the evaluator may emit `OBSERVING` (or the sole early `STOP` when all teams removed Proofline for low value). It rejects evaluation after the frozen cutoff. Final rules run only at `evaluationAt`, so identical evidence bytes cannot acquire a different final outcome through hindsight timing.
+Before `evaluationAt`, the evaluator may emit `OBSERVING` (or the sole early `STOP` when all teams removed Proofline for low value). It rejects evaluation after the frozen cutoff. Final rules run only at the caller-supplied exact `evaluationAt`, but this is a candidate result until the independent chronology verification above proves the evidence existed by that cutoff.
 
-- **PROCEED** — rows 1–8 met, classifications trusted, retention voluntary. Authorizes hosted-history _design_ only.
+- **PROCEED** — rows 1–8 met, classifications trusted, retention voluntary. Only after independent chronology verification does it authorize hosted-history _design_ only.
 - **NARROW** — rows 2 and 5 meet their thresholds, no stop rule applies, and at least four qualified interviews independently identify the same frozen `W-...` alternative wedge; rewrite §4 first.
 - **STOP** — rows 1, 3, 4 met and (row 2 < 2, row 5 = 0 in disease-qualified repos, an unresolved false positive exists, or every team removed the action for low value). All-team low-value removal has precedence over `PROCEED`. Legitimate: the problem is real but rare and §2's rollup suffices.
 - **INCONCLUSIVE** — rows 1, 3, or 4 unmet. Change channel or extend. Claim nothing.
@@ -516,7 +524,7 @@ Internal-only installs, retrospective threshold edits, and AI opinions never cou
 
 ### 19.4 Investment review trigger
 
-The next independent review runs only after executable CI evidence exists (Phase C complete) and recommends investment only with: usage in ≥5 repositories including the 3 pilots; ≥3 confirmed catches across ≥2 teams; trusted classifications; ≥1 paid pilot or signed commitment. Until then: **promising, not proven.**
+The next independent review runs only after executable CI evidence exists (Phase C complete) and recommends investment only with: usage in ≥5 repositories including the 3 pilots; ≥3 confirmed catches across ≥2 teams; trusted classifications; an independently chronology-verified gate; ≥1 paid pilot or signed commitment. Until then: **promising, not proven.**
 
 ---
 

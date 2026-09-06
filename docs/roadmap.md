@@ -18,12 +18,14 @@ report-only mode. Only pilot-blocking correctness, compatibility, security, or
 summary-noise fixes are authorized during the window. The market verdict stays
 **promising, not proven** until the gate is complete.
 
-## Stage 3 — hosted-history design only after PROCEED
+## Stage 3 — hosted-history design only after verified PROCEED
 
-Only a `PROCEED` result authorizes design exploration for retained history and
-audit export. It does not authorize hosted implementation, billing, or market
-claims. A new reviewed specification and security/privacy model are required
-before any hosted code.
+Only an independently chronology-verified `PROCEED` result authorizes design
+exploration for retained history and audit export. The local evaluator labels
+every result `non_authoritative`; a caller-supplied `--as-of` is not proof that
+the evaluated bytes existed at the cutoff. A verified result still does not
+authorize hosted implementation, billing, or market claims. A new reviewed
+specification and security/privacy model are required before any hosted code.
 
 ## Explicit v0.1 non-goals
 

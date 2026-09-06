@@ -197,6 +197,10 @@ describe('validate-pilot-data', () => {
     expect(result).toMatchObject({
       outcome: 'PROCEED',
       rule: 'all_commercial_measures_met',
+      authority: {
+        status: 'non_authoritative',
+        chronology: 'external_verification_required',
+      },
       window: { evaluationAt: '2026-10-02T00:00:00Z' },
       measures: {
         completedQualifiedInterviews: { value: 8, met: true },
@@ -291,6 +295,28 @@ describe('validate-pilot-data', () => {
     fields[10] = '';
     data.interviews[0] = fields.join(',');
     expect(() => validate(data)).toThrow(/price_probe_response/);
+  });
+
+  it('rejects free-text roles even when the interview is unqualified', () => {
+    const data = completeData();
+    const fields = data.interviews[4]?.split(',') ?? [];
+    fields[5] = 'no';
+    fields[6] = 'Jane Doe';
+    data.interviews[4] = fields.join(',');
+
+    expect(() => validate(data)).toThrow(/role must use an allowed value/);
+  });
+
+  it('rejects free-text price responses on unconducted interviews', () => {
+    const data = completeData();
+    const fields = data.interviews[0]?.split(',') ?? [];
+    fields[4] = '';
+    fields[10] = 'private@example.com';
+    data.interviews[0] = fields.join(',');
+
+    expect(() => validate(data)).toThrow(
+      /price_probe_response must be blank or use an allowed value/,
+    );
   });
 
   it('rejects arbitrary classifications and event values', () => {

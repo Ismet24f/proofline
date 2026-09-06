@@ -50,7 +50,10 @@ pull-request numbers, customer payloads, or raw URLs in these ledgers.
   a frozen interview ID, a booking at or before the freeze, a conducted time
   inside the window, and unique evidence. A completed budget-authority probe
   must record `accept`, `consider`, `reject`, or `declined`; an empty response
-  does not count. `alternative_wedge_alias` records a repeated materially
+  does not count. Every row uses the closed role set (including opaque `other`),
+  and every price response is either blank or one of those four values. A price
+  response is forbidden until a budget-authority interview is conducted.
+  `alternative_wedge_alias` records a repeated materially
   different wedge without exposing its text publicly.
 - `pilot-runs.csv` contains one row per distinct repository/pull-request pair.
   A run counts only for the frozen repository-team mapping, inside the window,
@@ -94,15 +97,23 @@ The evaluator reads every input exactly once and derives parsing, validation,
 measures, and SHA-256 from those same immutable bytes. It emits each numerator,
 threshold, result, included IDs, excluded IDs with reasons, noise records,
 frozen cohort, and digest of every input file. The generated decision record
-therefore pins the exact data used;
-the private repository history and external freeze digest provide the audit
-trail. This is tamper-evident process evidence, not a claim that a local CSV can
-be made cryptographically immutable by itself.
+therefore pins the exact data used. Its output always labels itself
+`non_authoritative` because `--as-of` and the local clock are operator supplied.
+The evaluator proves byte consistency and deterministic rules; it does not
+prove when those bytes existed.
+
+An outcome becomes authoritative only after an independent reviewer verifies
+that protected private-repository history contains all five exact input digests
+no later than `evaluationAt`, and an external timestamped record binds that
+commit, the decision digest, and the freeze digest. Record that verification
+outside these public alias-only files. Without it, even a computed `PROCEED` is
+only a candidate result and cannot authorize Stage 3.
 
 ## Execute the decision
 
-Use the manifest's exact frozen `evaluationAt` as the final decision time. An
-earlier `--as-of` is a non-final progress view; a later value is rejected:
+Use the manifest's exact frozen `evaluationAt` as the candidate final decision
+time. An earlier `--as-of` is a non-final progress view; a later value is
+rejected. The evaluator does not treat the caller-supplied time as trusted:
 
 ```sh
 node packages/test-fixtures/scripts/validate-pilot-data.mjs \
@@ -140,5 +151,5 @@ At `evaluationAt`, rules execute once in this order:
 Noise is reported but cannot override these rules. Publish only aggregate,
 non-identifying results and only with explicit permission.
 
-Market verdict until a completed gate returns `PROCEED`: **promising, not
-proven**.
+Market verdict until an independently chronology-verified gate returns
+`PROCEED`: **promising, not proven**.
