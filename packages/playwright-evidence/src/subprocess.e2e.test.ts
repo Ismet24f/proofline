@@ -493,55 +493,59 @@ describe('real Playwright evidence workflows', { timeout: 30_000 }, () => {
     ).rejects.toThrow(`cannot resolve @playwright/test/cli from ${workspace}`);
   });
 
-  it('runs the bundled action against a consumer that installs no Proofline package', async () => {
+  it('runs the published three-shard topology in a consumer with no Proofline package', async () => {
     const workspace = await prepareWorkspace(consumerFixtureSource);
     const consumerPackage = JSON.parse(
       await readFile(join(workspace, 'package.json'), 'utf8'),
     ) as unknown;
     expect(JSON.stringify(consumerPackage)).not.toContain('@proofline/');
 
-    const plan = await runBundledAction(workspace, {
-      operation: 'plan',
-      producer: 'e2e',
-      shard: '1/1',
-      'playwright-args': '--project=chromium',
-      config: 'playwright.config.ts',
-      repository,
-      revision,
-      out: 'proofline/plan.json',
-    });
-    expect(plan.code, plan.stderr || plan.stdout).toBe(0);
+    for (let current = 1; current <= 3; current += 1) {
+      const scope = `proofline/e2e-${String(current)}-of-3`;
+      const plan = await runBundledAction(workspace, {
+        operation: 'plan',
+        producer: 'e2e',
+        shard: `${String(current)}/3`,
+        'playwright-args': '--project=chromium',
+        config: 'playwright.config.ts',
+        repository,
+        revision,
+        out: `${scope}/plan.json`,
+      });
+      expect(plan.code, plan.stderr || plan.stdout).toBe(0);
 
-    const execution = await runCommand({
-      cwd: workspace,
-      command: process.execPath,
-      args: [
-        resolvePlaywrightCli(workspace),
-        'test',
-        '--config=playwright.config.ts',
-        '--project=chromium',
-        '--reporter=line,json',
-      ],
-      env: {
-        ...githubEnvironment(workspace),
-        PLAYWRIGHT_JSON_OUTPUT_FILE: join(workspace, 'proofline/report.json'),
-      },
-    });
-    expect(execution.code, execution.stderr || execution.stdout).toBe(0);
+      const execution = await runCommand({
+        cwd: workspace,
+        command: process.execPath,
+        args: [
+          resolvePlaywrightCli(workspace),
+          'test',
+          '--config=playwright.config.ts',
+          '--project=chromium',
+          `--shard=${String(current)}/3`,
+          '--reporter=line,json',
+        ],
+        env: {
+          ...githubEnvironment(workspace),
+          PLAYWRIGHT_JSON_OUTPUT_FILE: join(workspace, scope, 'report.json'),
+        },
+      });
+      expect(execution.code, execution.stderr || execution.stdout).toBe(0);
 
-    const collect = await runBundledAction(workspace, {
-      operation: 'collect',
-      producer: 'e2e',
-      shard: '1/1',
-      report: 'proofline/report.json',
-      plan: 'proofline/plan.json',
-      out: 'proofline/envelope.json',
-    });
-    expect(collect.code, collect.stderr || collect.stdout).toBe(0);
+      const collect = await runBundledAction(workspace, {
+        operation: 'collect',
+        producer: 'e2e',
+        shard: `${String(current)}/3`,
+        report: `${scope}/report.json`,
+        plan: `${scope}/plan.json`,
+        out: `${scope}/envelope.json`,
+      });
+      expect(collect.code, collect.stderr || collect.stdout).toBe(0);
+    }
 
     const reconcile = await runBundledAction(workspace, {
       operation: 'reconcile',
-      producers: 'e2e=1',
+      producers: 'e2e=3',
       artifacts: 'proofline',
       mode: 'report-only',
       out: 'reconciliation.json',
