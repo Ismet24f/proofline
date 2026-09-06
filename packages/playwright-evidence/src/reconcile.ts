@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, realpath } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import {
@@ -6,15 +6,19 @@ import {
   parseReconciliationReport,
   parseResultEnvelope,
   type Classification,
+  type PlanArtifact,
   type PlannedEvidenceRecord,
   type ProducerRef,
   type ReconciliationMode,
   type ReconciliationReport,
+  type ResultEnvelope,
 } from '@proofline/evidence-model';
 
 import { flattenPlaywrightTests } from './identity.js';
-import { parsePlaywrightJson } from './playwright-json.js';
+import { parseProducerManifest } from './manifest.js';
 import { deriveObservedOutcome } from './outcomes.js';
+import { computePlanDigest } from './plan.js';
+import { parsePlaywrightJson } from './playwright-json.js';
 import {
   readBoundedJson,
   resolveInputPath,
@@ -22,35 +26,19 @@ import {
   sha256File,
   writeJsonAtomically,
 } from './safe-files.js';
+import { buildSelectionDescriptor, diffSelection } from './selection.js';
 
 function producerKey(producer: ProducerRef): string {
   return `${producer.id}:${String(producer.shard.current)}/${String(producer.shard.total)}`;
 }
 
-export function parseProducerManifest(input: string): ProducerRef[] {
-  const producers: ProducerRef[] = [];
-  for (const entry of input.split(',')) {
-    const [id, totalText, extra] = entry.split('=');
-    const total = Number(totalText);
-    if (
-      id === undefined ||
-      !/^[a-z0-9-]{1,32}$/u.test(id) ||
-      totalText === undefined ||
-      extra !== undefined ||
-      !Number.isInteger(total) ||
-      total < 1 ||
-      total > 1000
-    ) {
-      throw new Error(`invalid producer manifest entry: ${entry}`);
-    }
-    for (let current = 1; current <= total; current += 1) {
-      producers.push({ id, shard: { current, total } });
-    }
+class ReconciliationToolError extends Error {
+  constructor(
+    readonly code: string,
+    readonly scopeKey?: string,
+  ) {
+    super(scopeKey === undefined ? code : `${code}: ${scopeKey}`);
   }
-  if (producers.length !== 1 || producers[0]?.id !== 'e2e') {
-    throw new Error('thin slice supports exactly one producer: e2e=1');
-  }
-  return producers;
 }
 
 async function findNamedFiles(root: string, name: string): Promise<string[]> {
@@ -58,19 +46,14 @@ async function findNamedFiles(root: string, name: string): Promise<string[]> {
   const directories = [root];
   while (directories.length > 0) {
     const directory = directories.pop();
-    if (directory === undefined) {
-      break;
-    }
+    if (directory === undefined) break;
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        directories.push(path);
-      } else if (entry.isFile() && basename(path) === name) {
-        matches.push(path);
-      }
+      if (entry.isDirectory()) directories.push(path);
+      else if (entry.isFile() && basename(path) === name) matches.push(path);
     }
   }
-  return matches;
+  return matches.sort((left, right) => left.localeCompare(right));
 }
 
 function emptyCounts() {
@@ -108,6 +91,45 @@ function incrementClassification(
   counts[fields[classification]] += 1;
 }
 
+function verifyPlanDigest(plan: PlanArtifact): void {
+  const { digest, ...withoutDigest } = plan;
+  if (computePlanDigest(withoutDigest) !== digest) {
+    throw new ReconciliationToolError(
+      'plan_digest_mismatch',
+      producerKey(plan.producer),
+    );
+  }
+}
+
+function duplicateKey<T>(
+  values: readonly T[],
+  producer: (value: T) => ProducerRef,
+): string | undefined {
+  const seen = new Set<string>();
+  for (const value of values) {
+    const key = producerKey(producer(value));
+    if (seen.has(key)) return key;
+    seen.add(key);
+  }
+  return undefined;
+}
+
+function noEvidenceRecords(
+  plan: PlanArtifact,
+  counts: ReturnType<typeof emptyCounts>,
+): PlannedEvidenceRecord[] {
+  const active = plan.tests.filter((test) => test.expectedStatus !== 'skipped');
+  counts.plannedActive += active.length;
+  counts.plannedDisabled += plan.tests.length - active.length;
+  counts.noEvidence += active.length;
+  return active.map((test) => ({
+    producer: plan.producer,
+    ...test,
+    classification: 'no_evidence' as const,
+    reasonCodes: ['producer_no_evidence'],
+  }));
+}
+
 export interface ReconcileEvidenceOptions {
   workspace: string;
   artifacts: string;
@@ -120,30 +142,96 @@ export interface ReconcileEvidenceOptions {
   runAttempt: number;
 }
 
-export async function reconcileEvidence(
+interface LoadedEnvelope {
+  path: string;
+  value: ResultEnvelope;
+}
+
+function finalizeCounts(counts: ReturnType<typeof emptyCounts>): void {
+  counts.knownTestGaps =
+    counts.runtimeSkipped +
+    counts.incomplete +
+    counts.absent +
+    counts.noEvidence;
+  counts.notExecuted = counts.knownTestGaps;
+}
+
+function diagnosticReport(
   options: ReconcileEvidenceOptions,
+  manifest: readonly ProducerRef[],
+  code: string,
+  scopeKey?: string,
+): ReconciliationReport {
+  const counts = emptyCounts();
+  counts.producerGaps = manifest.length;
+  counts.toolErrors = 1;
+  const timestamp = new Date().toISOString();
+  return parseReconciliationReport({
+    schemaVersion: 1,
+    toolVersion: '0.1.0',
+    repository: options.repository,
+    revision: options.revision,
+    runId: options.runId,
+    runAttempt: options.runAttempt,
+    mode: options.mode,
+    generatedAt: timestamp,
+    evaluatedAt: timestamp,
+    manifest: { schemaVersion: 1, producers: manifest },
+    topology: manifest.map((producer) => ({
+      producer,
+      status: 'invalid' as const,
+      reasonCodes: [
+        scopeKey === undefined || producerKey(producer) === scopeKey
+          ? code
+          : 'evaluation_aborted',
+      ],
+    })),
+    tests: [],
+    unexpectedTests: [],
+    counts,
+    status: 'tool_error',
+    exitDecision: { code: 2, reasonCodes: [code] },
+  });
+}
+
+async function reconcileValidArtifacts(
+  options: ReconcileEvidenceOptions,
+  canonicalWorkspace: string,
+  manifest: readonly ProducerRef[],
 ): Promise<ReconciliationReport> {
-  const manifest = parseProducerManifest(options.producers);
   const artifacts = await resolveInputPath(
-    options.workspace,
+    canonicalWorkspace,
     options.artifacts,
   );
-  const out = await resolveOutputPath(options.workspace, options.out);
   const [planFiles, envelopeFiles] = await Promise.all([
     findNamedFiles(artifacts, 'plan.json'),
     findNamedFiles(artifacts, 'envelope.json'),
   ]);
   const plans = await Promise.all(
-    planFiles.map(async (path) =>
-      parsePlanArtifact(await readBoundedJson(path)),
-    ),
+    planFiles.map(async (path) => {
+      const value = parsePlanArtifact(await readBoundedJson(path));
+      verifyPlanDigest(value);
+      return { path, value };
+    }),
   );
-  const envelopes = await Promise.all(
+  const envelopes: LoadedEnvelope[] = await Promise.all(
     envelopeFiles.map(async (path) => ({
       path,
       value: parseResultEnvelope(await readBoundedJson(path)),
     })),
   );
+  const duplicatePlan = duplicateKey(plans, (plan) => plan.value.producer);
+  if (duplicatePlan !== undefined) {
+    throw new ReconciliationToolError('duplicate_plan', duplicatePlan);
+  }
+  const duplicateEnvelope = duplicateKey(
+    envelopes,
+    (envelope) => envelope.value.producer,
+  );
+  if (duplicateEnvelope !== undefined) {
+    throw new ReconciliationToolError('duplicate_envelope', duplicateEnvelope);
+  }
+
   const topology = [];
   const tests: PlannedEvidenceRecord[] = [];
   const unexpectedTests = [];
@@ -151,45 +239,92 @@ export async function reconcileEvidence(
 
   for (const producer of manifest) {
     const key = producerKey(producer);
-    const matchingPlans = plans.filter(
-      (plan) => producerKey(plan.producer) === key,
+    const planEntry = plans.find(
+      (entry) => producerKey(entry.value.producer) === key,
     );
-    const matchingEnvelopes = envelopes.filter(
-      (envelope) => producerKey(envelope.value.producer) === key,
+    const envelope = envelopes.find(
+      (entry) => producerKey(entry.value.producer) === key,
     );
-    if (matchingPlans.length !== 1 || matchingEnvelopes.length !== 1) {
+    if (planEntry === undefined) {
       topology.push({
         producer,
         status: 'missing' as const,
-        reasonCodes: ['producer_artifact_missing'],
+        reasonCodes: ['producer_plan_missing'],
       });
       counts.producerGaps += 1;
       continue;
     }
-    const plan = matchingPlans[0];
-    const envelope = matchingEnvelopes[0];
-    if (plan === undefined || envelope === undefined) {
-      throw new Error('internal producer matching error');
-    }
+    const plan = planEntry.value;
     if (
       plan.repository !== options.repository ||
-      plan.revision !== options.revision ||
+      plan.revision !== options.revision
+    ) {
+      throw new ReconciliationToolError('artifact_identity_mismatch', key);
+    }
+    if (envelope === undefined) {
+      const conventionalReport = join(dirname(planEntry.path), 'report.json');
+      try {
+        const report = parsePlaywrightJson(
+          await readBoundedJson(conventionalReport),
+        );
+        const selection = diffSelection(
+          plan.selection,
+          buildSelectionDescriptor(report, options.workspace, producer),
+        );
+        if (selection.status === 'mismatch') {
+          throw new ReconciliationToolError('selection_mismatch', key);
+        }
+      } catch (error) {
+        if (error instanceof ReconciliationToolError) throw error;
+        if (!(
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'ENOENT'
+        )) {
+          throw new ReconciliationToolError('invalid_report', key);
+        }
+      }
+      tests.push(...noEvidenceRecords(plan, counts));
+      topology.push({
+        producer,
+        status: 'missing' as const,
+        planDigest: plan.digest,
+        reasonCodes: ['producer_envelope_missing'],
+      });
+      counts.producerGaps += 1;
+      continue;
+    }
+    if (
       envelope.value.repository !== options.repository ||
       envelope.value.revision !== options.revision ||
       envelope.value.runId !== options.runId ||
       envelope.value.runAttempt !== options.runAttempt ||
-      envelope.value.planDigest !== plan.digest
+      envelope.value.planDigest !== plan.digest ||
+      producerKey(envelope.value.producer) !== key
     ) {
-      throw new Error(`artifact identity mismatch for ${key}`);
+      throw new ReconciliationToolError('artifact_identity_mismatch', key);
+    }
+    if (envelope.value.selectionCheck.status === 'mismatch') {
+      throw new ReconciliationToolError('selection_mismatch', key);
+    }
+    if (envelope.value.selectionCheck.status === 'unavailable') {
+      throw new ReconciliationToolError('selection_unavailable', key);
     }
     const reportPath = await resolveInputPath(
-      options.workspace,
+      canonicalWorkspace,
       join(dirname(envelope.path), envelope.value.reportPath),
     );
     if ((await sha256File(reportPath)) !== envelope.value.reportDigest) {
-      throw new Error(`report digest mismatch for ${key}`);
+      throw new ReconciliationToolError('report_digest_mismatch', key);
     }
     const report = parsePlaywrightJson(await readBoundedJson(reportPath));
+    const selection = diffSelection(
+      plan.selection,
+      buildSelectionDescriptor(report, options.workspace, producer),
+    );
+    if (selection.status === 'mismatch') {
+      throw new ReconciliationToolError('selection_mismatch', key);
+    }
     const normalizedObserved = flattenPlaywrightTests(report);
     const reportInterrupted = normalizedObserved.some((test) =>
       test.observed.results.some((result) => result.status === 'interrupted'),
@@ -200,11 +335,24 @@ export async function reconcileEvidence(
     const active = plan.tests.filter(
       (test) => test.expectedStatus !== 'skipped',
     );
+    const disabled = plan.tests.filter(
+      (test) => test.expectedStatus === 'skipped',
+    );
     counts.plannedActive += active.length;
-    counts.plannedDisabled += plan.tests.length - active.length;
+    counts.plannedDisabled += disabled.length;
+    for (const planned of disabled) observed.delete(planned.identity.key);
 
     for (const planned of active) {
       const actual = observed.get(planned.identity.key);
+      if (
+        actual !== undefined &&
+        JSON.stringify(actual.identity) !== JSON.stringify(planned.identity)
+      ) {
+        throw new ReconciliationToolError(
+          'identity_metadata_mismatch',
+          planned.identity.key,
+        );
+      }
       const classification =
         actual === undefined
           ? ('absent' as const)
@@ -246,24 +394,28 @@ export async function reconcileEvidence(
     });
   }
 
-  counts.knownTestGaps =
-    counts.runtimeSkipped +
-    counts.incomplete +
-    counts.absent +
-    counts.noEvidence;
-  counts.notExecuted = counts.knownTestGaps;
+  tests.sort(
+    (left, right) =>
+      left.identity.key.localeCompare(right.identity.key) ||
+      producerKey(left.producer).localeCompare(producerKey(right.producer)),
+  );
+  unexpectedTests.sort(
+    (left, right) =>
+      left.identity.key.localeCompare(right.identity.key) ||
+      producerKey(left.producer).localeCompare(producerKey(right.producer)),
+  );
+  finalizeCounts(counts);
   const hasGaps =
     counts.producerGaps > 0 ||
     counts.knownTestGaps > 0 ||
     counts.unexpected > 0;
-  const status = hasGaps ? 'evidence_gaps' : 'complete';
   const reasonCodes = [
     ...(counts.producerGaps > 0 ? ['producer_gap'] : []),
     ...(counts.knownTestGaps > 0 ? ['known_test_gap'] : []),
     ...(counts.unexpected > 0 ? ['unexpected_test'] : []),
   ];
   const timestamp = new Date().toISOString();
-  const result = parseReconciliationReport({
+  return parseReconciliationReport({
     schemaVersion: 1,
     toolVersion: '0.1.0',
     repository: options.repository,
@@ -278,12 +430,37 @@ export async function reconcileEvidence(
     tests,
     unexpectedTests,
     counts,
-    status,
+    status: hasGaps ? 'evidence_gaps' : 'complete',
     exitDecision: {
       code: hasGaps && options.mode === 'enforce-evidence' ? 1 : 0,
       reasonCodes,
     },
   });
+}
+
+export async function reconcileEvidence(
+  options: ReconcileEvidenceOptions,
+): Promise<ReconciliationReport> {
+  const out = await resolveOutputPath(options.workspace, options.out);
+  let manifest: ProducerRef[] = [];
+  let result: ReconciliationReport;
+  try {
+    manifest = parseProducerManifest(options.producers);
+    const canonicalWorkspace = await realpath(options.workspace);
+    result = await reconcileValidArtifacts(
+      options,
+      canonicalWorkspace,
+      manifest,
+    );
+  } catch (error) {
+    const code =
+      error instanceof ReconciliationToolError
+        ? error.code
+        : 'artifact_invalid';
+    const scopeKey =
+      error instanceof ReconciliationToolError ? error.scopeKey : undefined;
+    result = diagnosticReport(options, manifest, code, scopeKey);
+  }
   await writeJsonAtomically(out, result);
   return result;
 }
@@ -291,5 +468,7 @@ export async function reconcileEvidence(
 export function renderThinSummary(report: ReconciliationReport): string {
   return report.status === 'complete'
     ? `✅ COMPLETE — all ${String(report.counts.plannedActive)} active planned tests produced terminal evidence`
-    : `⚠️ EVIDENCE GAPS — ${String(report.counts.producerGaps)} producer scopes and ${String(report.counts.knownTestGaps)} known active planned tests lack trustworthy execution evidence`;
+    : report.status === 'tool_error'
+      ? '❌ TOOL ERROR — Proofline could not evaluate this run'
+      : `⚠️ EVIDENCE GAPS — ${String(report.counts.producerGaps)} producer scopes and ${String(report.counts.knownTestGaps)} known active planned tests lack trustworthy execution evidence`;
 }

@@ -1,6 +1,7 @@
 export * from './arguments.js';
 export * from './collect.js';
 export * from './identity.js';
+export * from './manifest.js';
 export * from './metadata.js';
 export * from './outcomes.js';
 export * from './plan.js';
@@ -8,3 +9,4 @@ export * from './playwright-json.js';
 export * from './reconcile.js';
 export * from './safe-files.js';
 export * from './selection.js';
+export * from './summary.js';
