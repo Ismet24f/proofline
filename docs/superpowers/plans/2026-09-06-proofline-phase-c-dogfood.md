@@ -37,7 +37,7 @@
 
 - Produces CSV header: `observation_id,repository_alias,pr_alias,observed_at,proofline_commit,playwright_version,mode,proofline_status,proofline_records,raw_records_checked,cross_check_result,false_classification_count,resolved_at,evidence_ref,resolution_evidence_ref`
 - Produces consumer JSON keys: `schemaVersion,status,repositoryAlias,verifiedCommit,playwrightVersion,freshClone,noProoflinePackage,workflowConclusion,prooflineReportSha256,rawReportSha256,verifiedAt,reviewerAlias,evidenceRef`
-- Evidence references match `E-[A-Za-z0-9_-]+`; aliases match their existing `R-`, `PR-`, `OBS-`, and `P-` prefixes.
+- Evidence references and aliases use their published prefix plus exactly six decimal digits, for example `E-000001` and `OBS-000001`.
 
 - [x] **Step 1: Add the empty observation ledger**
 
@@ -73,9 +73,9 @@ git commit -m "docs: define Phase C dogfood evidence"
 **Interfaces:**
 
 - CLI: `node packages/test-fixtures/scripts/validate-phase-c.mjs [observations.csv consumer.json]`
-- Output: `{ schemaVersion, outcome, counts, unresolvedObservationIds, inputSha256 }`
+- Output: `{ schemaVersion, outcome, counts, consumerVerified, authority, unresolvedObservationIds, inputSha256 }`
 - Outcomes: `PHASE_C_OBSERVING` or `PHASE_C_READY`
-- `counts` keys: `distinctPullRequests`, `matchedObservations`, `resolvedMismatchObservations`, `unresolvedMismatchObservations`, `requiredPullRequests`
+- `counts` keys: `distinctPullRequests`, `qualifyingPullRequests`, `matchedObservations`, `resolvedMismatchObservations`, `unresolvedMismatchObservations`, `toolErrorObservations`, `requiredPullRequests`
 
 - [x] **Step 1: Write failing contract tests**
 
@@ -95,7 +95,7 @@ Reject duplicate repository/PR pairs, noncanonical UTC timestamps, unknown keys 
 
 - [x] **Step 4: Implement the minimal validator**
 
-Read each input once as a `Buffer`; parse and hash those exact bytes. Validate the closed contracts. Count distinct repository/PR pairs. Emit `PHASE_C_READY` only when at least 20 observations are valid, every record was cross-checked, every mismatch has canonical `resolved_at` plus `resolution_evidence_ref`, and the consumer record is fully verified. Do not perform network access or infer market demand.
+Read each size-bounded input once as a `Buffer`; parse and hash those exact bytes. Validate the closed contracts. Count distinct repository/PR pairs, but exclude `tool_error` rows from the qualifying threshold. Emit `PHASE_C_READY` only when at least 20 observations qualify, every record was cross-checked, every mismatch has canonical `resolved_at` plus a unique `resolution_evidence_ref`, and the consumer record is fully verified. Do not perform network access or infer market demand.
 
 - [x] **Step 5: Add the package command**
 

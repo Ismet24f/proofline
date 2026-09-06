@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const REQUIRED_PULL_REQUESTS = 20;
+const MAX_OBSERVATION_BYTES = 1024 * 1024;
+const MAX_CONSUMER_BYTES = 64 * 1024;
+const MAX_OBSERVATIONS = 1000;
+const MAX_RECORDS_PER_OBSERVATION = 1_000_000;
 const HEADER = [
   'observation_id',
   'repository_alias',
@@ -44,12 +48,12 @@ const SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const PLAYWRIGHT_VERSION = /^1\.62\.\d+$/;
 const ALIASES = {
-  observation_id: /^OBS-[A-Z0-9_-]+$/,
-  repository_alias: /^R-[A-Z0-9_-]+$/,
-  pr_alias: /^PR-[A-Z0-9_-]+$/,
-  reviewerAlias: /^P-[A-Z0-9_-]+$/,
+  observation_id: /^OBS-\d{6}$/,
+  repository_alias: /^R-\d{6}$/,
+  pr_alias: /^PR-\d{6}$/,
+  reviewerAlias: /^P-\d{6}$/,
 };
-const EVIDENCE_REFERENCE = /^E-[A-Za-z0-9_-]+$/;
+const EVIDENCE_REFERENCE = /^E-\d{6}$/;
 const STATUSES = new Set(['complete', 'evidence_gaps', 'tool_error']);
 const CROSS_CHECK_RESULTS = new Set(['matched', 'mismatch']);
 
@@ -59,6 +63,16 @@ function fail(message) {
 
 function sha256(source) {
   return createHash('sha256').update(source).digest('hex');
+}
+
+function readBounded(filePath, maximumBytes) {
+  const size = statSync(filePath).size;
+  if (size > maximumBytes)
+    fail(`${filePath}: file exceeds ${String(maximumBytes)} bytes`);
+  const source = readFileSync(filePath);
+  if (source.length > maximumBytes)
+    fail(`${filePath}: file exceeds ${String(maximumBytes)} bytes`);
+  return source;
 }
 
 function parseCsv(source, filePath) {
@@ -94,6 +108,8 @@ function readObservations(filePath, source) {
   const rows = parseCsv(source, filePath);
   if (rows.shift()?.join(',') !== HEADER.join(','))
     fail(`${filePath}: header does not match the published contract`);
+  if (rows.length > MAX_OBSERVATIONS)
+    fail(`${filePath}: observation count exceeds ${String(MAX_OBSERVATIONS)}`);
   return rows.map((values, index) => {
     if (values.length !== HEADER.length)
       fail(
@@ -132,6 +148,8 @@ function integer(value, field, at, positive = false) {
   if (!/^(?:0|[1-9]\d*)$/.test(value))
     fail(`${at}: ${field} must be a non-negative integer`);
   const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed > MAX_RECORDS_PER_OBSERVATION)
+    fail(`${at}: ${field} exceeds the safe supported range`);
   if (positive && parsed === 0) fail(`${at}: ${field} must be positive`);
   return parsed;
 }
@@ -148,6 +166,8 @@ function unique(records, field, filePath) {
 function validateObservations(records, filePath) {
   unique(records, 'observation_id', filePath);
   unique(records, 'evidence_ref', filePath);
+  const primaryEvidence = new Set(records.map((record) => record.evidence_ref));
+  const resolutionEvidence = new Set();
   const repositoryPullRequests = new Set();
 
   for (const [index, record] of records.entries()) {
@@ -194,6 +214,8 @@ function validateObservations(records, filePath) {
     );
     if (prooflineRecords !== rawRecordsChecked)
       fail(`${at}: proofline_records must equal raw_records_checked`);
+    if (falseClassifications > prooflineRecords)
+      fail(`${at}: false_classification_count cannot exceed proofline_records`);
 
     if (record.cross_check_result === 'matched') {
       if (falseClassifications !== 0)
@@ -222,6 +244,13 @@ function validateObservations(records, filePath) {
           fail(
             `${at}: resolution_evidence_ref must be an alias-safe E- reference`,
           );
+        if (primaryEvidence.has(record.resolution_evidence_ref))
+          fail(`${at}: resolution_evidence_ref collides with evidence_ref`);
+        if (resolutionEvidence.has(record.resolution_evidence_ref))
+          fail(
+            `${filePath}: duplicate resolution_evidence_ref "${record.resolution_evidence_ref}"`,
+          );
+        resolutionEvidence.add(record.resolution_evidence_ref);
       }
     }
 
@@ -313,15 +342,21 @@ function evaluate(
     (record) =>
       record.cross_check_result === 'mismatch' && record.resolved_at !== '',
   ).length;
+  const toolErrors = observations.filter(
+    (record) => record.proofline_status === 'tool_error',
+  ).length;
+  const qualifying = observations.length - toolErrors;
   const counts = {
     distinctPullRequests: observations.length,
+    qualifyingPullRequests: qualifying,
     matchedObservations: matched,
     resolvedMismatchObservations: resolved,
     unresolvedMismatchObservations: unresolved.length,
+    toolErrorObservations: toolErrors,
     requiredPullRequests: REQUIRED_PULL_REQUESTS,
   };
   const ready =
-    counts.distinctPullRequests >= REQUIRED_PULL_REQUESTS &&
+    counts.qualifyingPullRequests >= REQUIRED_PULL_REQUESTS &&
     counts.unresolvedMismatchObservations === 0 &&
     consumerVerified;
   return {
@@ -351,8 +386,11 @@ function main() {
   const consumerPath = resolve(
     arguments_[1] ?? resolve(ROOT, 'docs/validation/phase-c-consumer.json'),
   );
-  const observationsSource = readFileSync(observationsPath);
-  const consumerSource = readFileSync(consumerPath);
+  const observationsSource = readBounded(
+    observationsPath,
+    MAX_OBSERVATION_BYTES,
+  );
+  const consumerSource = readBounded(consumerPath, MAX_CONSUMER_BYTES);
   process.stdout.write(
     `${JSON.stringify(
       evaluate(

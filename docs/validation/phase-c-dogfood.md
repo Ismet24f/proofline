@@ -9,9 +9,12 @@ explicitly approves the release.
 ## Public contracts and protected evidence
 
 `phase-c-observations.csv` and `phase-c-consumer.json` are alias-only public
-records. Use opaque `OBS-`, `R-`, `PR-`, `P-`, and `E-` identifiers. Never put
-names, private repository paths, raw URLs, access tokens, test payloads, or
-customer data in them.
+records. Use mechanically assigned, zero-padded six-digit identifiers such as
+`OBS-000001`, `R-000001`, `PR-000001`, `P-000001`, and `E-000001`. The fixed
+shape prevents descriptive aliases but cannot prove semantic opacity, so the
+independent reviewer must still inspect the public records. Never put names,
+private repository paths, raw URLs, access tokens, test payloads, or customer
+data in them.
 
 For each `E-` reference, retain the URL mapping and these exact artifacts in an
 access-controlled evidence location:
@@ -38,12 +41,15 @@ success alone is insufficient.
 Use Playwright `1.62.x` and a full 40-character reviewed Proofline commit. The
 closed `proofline_status` values are `complete`, `evidence_gaps`, and
 `tool_error`. The closed `cross_check_result` values are `matched` and
-`mismatch`.
+`mismatch`. A `tool_error` row remains visible as an observation but does not
+count toward the 20 qualifying pull requests needed for readiness.
 
 For a `matched` row, `false_classification_count` is zero and both resolution
 fields are blank. For a `mismatch` row, the count is positive. It remains a
 release blocker until both `resolved_at` and `resolution_evidence_ref` identify
-a verified fix. Resolving a mismatch does not erase the original observation.
+a verified fix. Every primary and resolution evidence reference is unique; a
+shared underlying fix receives a separate evidence record for each affected
+observation. Resolving a mismatch does not erase the original observation.
 
 ### Non-counting baseline
 
@@ -90,9 +96,12 @@ pnpm --filter @proofline/test-fixtures validate:phase-c
 ```
 
 `PHASE_C_OBSERVING` is expected until at least 20 distinct PR observations are
-valid, every classification has been cross-checked, no mismatch is unresolved,
-and the separate consumer record is verified. `PHASE_C_READY` permits a release
-review; it does not create or authorize a tag by itself. Every local evaluator
-result is explicitly `non_authoritative` because the alias-only inputs and
-evidence references are operator supplied. An independent reviewer must inspect
-the protected artifacts and confirm their digests before accepting readiness.
+valid and do not have `tool_error` status, every classification has been
+cross-checked, no mismatch is unresolved, and the separate consumer record is
+verified. The validator accepts at most 1,000 observation rows, 1 MiB of CSV,
+64 KiB of consumer JSON, and 1,000,000 reviewed records per observation.
+`PHASE_C_READY` permits a release review; it does not create or authorize a tag
+by itself. Every local evaluator result is explicitly `non_authoritative`
+because the alias-only inputs and evidence references are operator supplied. An
+independent reviewer must inspect the protected artifacts and confirm their
+digests before accepting readiness.
