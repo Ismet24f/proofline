@@ -57,7 +57,7 @@ PR #2 and its successful self-test run `34040683344` do not count toward the
 20-PR threshold. The retained producer artifacts omit the final reconciliation
 JSON, and the happy-path reconciliation used `enforce-evidence` rather than the
 required `report-only` mode. This evidence proves conformance but cannot satisfy
-the Phase C observation contract. The public ledger therefore remains empty.
+the Phase C observation contract, so PR #2 contributes no public observation.
 
 ## Per-PR cross-check protocol
 
