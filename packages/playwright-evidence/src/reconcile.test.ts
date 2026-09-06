@@ -43,14 +43,24 @@ async function loadFixture(): Promise<MatrixFixture> {
 function rawReport(
   workspace: string,
   tests: readonly FixtureTest[],
-  shard = { current: 1, total: 1 },
+  shard: { current: number; total: number } | null = { current: 1, total: 1 },
+  cliProject?: string,
 ) {
+  const selectedProject = cliProject ?? 'chromium';
   return {
     config: {
-      argv: ['test', '--config=playwright.config.ts', '--reporter=json'],
+      argv: [
+        'test',
+        '--config=playwright.config.ts',
+        '--reporter=json',
+        ...(cliProject === undefined ? [] : [`--project=${cliProject}`]),
+      ],
       configFile: join(workspace, 'playwright.config.ts'),
       rootDir: join(workspace, 'tests'),
-      projects: [{ name: 'chromium' }],
+      projects:
+        cliProject === undefined
+          ? [{ name: 'chromium' }]
+          : [{ name: 'chromium' }, { name: 'firefox' }],
       shard,
       version: '1.62.1',
     },
@@ -66,7 +76,7 @@ function rawReport(
           tests: [
             {
               expectedStatus: test.expectedStatus ?? 'passed',
-              projectName: 'chromium',
+              projectName: selectedProject,
               results: test.attempts.map((status) => ({ status })),
               status: test.status,
             },
@@ -84,6 +94,8 @@ async function writeScope(options: {
   producer: { id: string; shard: { current: number; total: number } };
   planned: readonly FixtureTest[];
   observed?: readonly FixtureTest[];
+  observedShard?: { current: number; total: number } | null;
+  cliProject?: string;
 }): Promise<void> {
   const directory = join(options.workspace, 'artifacts', options.directory);
   await mkdir(directory, { recursive: true });
@@ -91,6 +103,7 @@ async function writeScope(options: {
     options.workspace,
     options.planned,
     options.producer.shard,
+    options.cliProject,
   );
   const plan = normalizePlanJson(plannedReport, {
     workspace: options.workspace,
@@ -105,7 +118,10 @@ async function writeScope(options: {
   const report = rawReport(
     options.workspace,
     options.observed,
-    options.producer.shard,
+    options.observedShard === undefined
+      ? options.producer.shard
+      : options.observedShard,
+    options.cliProject,
   );
   const reportPath = join(directory, 'report.json');
   await writeFile(reportPath, JSON.stringify(report));
@@ -324,6 +340,60 @@ describe('reconcileEvidence', () => {
       ],
     });
     await expect(readFile(setup.out, 'utf8')).resolves.toContain('tool_error');
+  });
+
+  it('rejects inconsistent project selection across shards of one producer', async () => {
+    const setup = await setupMatrix();
+    const fixture = await loadFixture();
+    await rm(join(setup.workspace, 'artifacts'), { recursive: true });
+    await writeScope({
+      workspace: setup.workspace,
+      directory: 'shard-1',
+      producer: { id: 'e2e', shard: { current: 1, total: 2 } },
+      planned: fixture.planned.slice(0, 1),
+      observed: fixture.observed.slice(0, 1),
+      cliProject: 'chromium',
+    });
+    await writeScope({
+      workspace: setup.workspace,
+      directory: 'shard-2',
+      producer: { id: 'e2e', shard: { current: 2, total: 2 } },
+      planned: fixture.planned.slice(1, 2),
+      observed: fixture.observed.slice(1, 2),
+      cliProject: 'firefox',
+    });
+
+    const report = await reconcileEvidence({
+      ...setup.options,
+      producers: 'e2e=2',
+    });
+    expect(report).toMatchObject({
+      status: 'tool_error',
+      exitDecision: { code: 2, reasonCodes: ['selection_mismatch'] },
+    });
+  });
+
+  it('rejects missing observed shard metadata for a declared multi-shard scope', async () => {
+    const setup = await setupMatrix();
+    const fixture = await loadFixture();
+    await rm(join(setup.workspace, 'artifacts'), { recursive: true });
+    await writeScope({
+      workspace: setup.workspace,
+      directory: 'shard-1',
+      producer: { id: 'e2e', shard: { current: 1, total: 2 } },
+      planned: fixture.planned.slice(0, 1),
+      observed: fixture.observed.slice(0, 1),
+      observedShard: null,
+    });
+
+    const report = await reconcileEvidence({
+      ...setup.options,
+      producers: 'e2e=2',
+    });
+    expect(report).toMatchObject({
+      status: 'tool_error',
+      exitDecision: { code: 2, reasonCodes: ['selection_mismatch'] },
+    });
   });
 
   it('treats duplicate envelope identities as a code-2 tool error', async () => {

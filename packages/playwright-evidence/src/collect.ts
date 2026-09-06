@@ -17,7 +17,7 @@ import {
   sha256File,
   writeJsonAtomically,
 } from './safe-files.js';
-import { buildSelectionDescriptor, diffSelection } from './selection.js';
+import { diffReportSelection } from './selection.js';
 
 export interface CollectEvidenceOptions {
   workspace: string;
@@ -134,9 +134,11 @@ export async function collectEvidence(
   const selectionCheck =
     plan === undefined
       ? ({ status: 'unavailable', reason: 'plan_missing' } as const)
-      : diffSelection(
+      : diffReportSelection(
           plan.selection,
-          buildSelectionDescriptor(report, options.workspace, options.producer),
+          report,
+          options.workspace,
+          options.producer,
         );
   await mkdir(dirname(out), { recursive: true });
   const outputDirectory = await realpath(dirname(out));

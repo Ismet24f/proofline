@@ -222,6 +222,38 @@ describe('collectEvidence', () => {
     });
   });
 
+  it('writes a mismatch envelope when a multi-shard report omits shard metadata', async () => {
+    const setup = await setupArtifacts();
+    const shardedProducer = {
+      id: 'e2e',
+      shard: { current: 1, total: 2 },
+    } as const;
+    setup.report.config.shard = shardedProducer.shard;
+    const plan = normalizePlanJson(setup.report, {
+      workspace: setup.workspace,
+      repository: 'acme/checkout',
+      revision,
+      producer: shardedProducer,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await writeFile(setup.planPath, `${JSON.stringify(plan, undefined, 2)}\n`);
+    setup.report.config.shard = null;
+    await writeFile(
+      setup.reportPath,
+      `${JSON.stringify(setup.report, undefined, 2)}\n`,
+    );
+
+    await expect(
+      collectEvidence({ ...setup.options, producer: shardedProducer }),
+    ).rejects.toMatchObject({ code: 'selection_mismatch' });
+    await expect(readJson(setup.out)).resolves.toMatchObject({
+      selectionCheck: {
+        status: 'mismatch',
+        differences: [{ field: 'shard', actual: 'null' }],
+      },
+    });
+  });
+
   it('rejects a plan whose content does not match its digest', async () => {
     const setup = await setupArtifacts();
     await writeFile(

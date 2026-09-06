@@ -65,3 +65,43 @@ export function diffSelection(
     ? { status: 'match' }
     : { status: 'mismatch', differences };
 }
+
+export function diffReportSelection(
+  planned: SelectionDescriptor,
+  report: PlaywrightJsonReport,
+  workspace: string,
+  producer: ProducerRef,
+): SelectionCheck {
+  if (report.config.shard === null && producer.shard.total > 1) {
+    return {
+      status: 'mismatch',
+      differences: [
+        {
+          field: 'shard',
+          planned: JSON.stringify(planned.shard),
+          actual: 'null',
+        },
+      ],
+    };
+  }
+  return diffSelection(
+    planned,
+    buildSelectionDescriptor(report, workspace, producer),
+  );
+}
+
+export function diffProducerSelection(
+  baseline: SelectionDescriptor,
+  candidate: SelectionDescriptor,
+): SelectionCheck {
+  return diffSelection(
+    {
+      ...baseline,
+      shard: { current: 1, total: baseline.shard.total },
+    },
+    {
+      ...candidate,
+      shard: { current: 1, total: candidate.shard.total },
+    },
+  );
+}

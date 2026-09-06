@@ -26,7 +26,7 @@ import {
   sha256File,
   writeJsonAtomically,
 } from './safe-files.js';
-import { buildSelectionDescriptor, diffSelection } from './selection.js';
+import { diffProducerSelection, diffReportSelection } from './selection.js';
 
 function producerKey(producer: ProducerRef): string {
   return `${producer.id}:${String(producer.shard.current)}/${String(producer.shard.total)}`;
@@ -232,6 +232,27 @@ async function reconcileValidArtifacts(
     throw new ReconciliationToolError('duplicate_envelope', duplicateEnvelope);
   }
 
+  const manifestKeys = new Set(manifest.map(producerKey));
+  for (const producerId of new Set(manifest.map((producer) => producer.id))) {
+    const producerPlans = plans
+      .filter(
+        (entry) =>
+          entry.value.producer.id === producerId &&
+          manifestKeys.has(producerKey(entry.value.producer)),
+      )
+      .map((entry) => entry.value);
+    const baseline = producerPlans[0];
+    if (baseline === undefined) continue;
+    for (const candidate of producerPlans.slice(1)) {
+      if (
+        diffProducerSelection(baseline.selection, candidate.selection)
+          .status === 'mismatch'
+      ) {
+        throw new ReconciliationToolError('selection_mismatch', producerId);
+      }
+    }
+  }
+
   const topology = [];
   const tests: PlannedEvidenceRecord[] = [];
   const unexpectedTests = [];
@@ -267,9 +288,11 @@ async function reconcileValidArtifacts(
         const report = parsePlaywrightJson(
           await readBoundedJson(conventionalReport),
         );
-        const selection = diffSelection(
+        const selection = diffReportSelection(
           plan.selection,
-          buildSelectionDescriptor(report, options.workspace, producer),
+          report,
+          options.workspace,
+          producer,
         );
         if (selection.status === 'mismatch') {
           throw new ReconciliationToolError('selection_mismatch', key);
@@ -318,9 +341,11 @@ async function reconcileValidArtifacts(
       throw new ReconciliationToolError('report_digest_mismatch', key);
     }
     const report = parsePlaywrightJson(await readBoundedJson(reportPath));
-    const selection = diffSelection(
+    const selection = diffReportSelection(
       plan.selection,
-      buildSelectionDescriptor(report, options.workspace, producer),
+      report,
+      options.workspace,
+      producer,
     );
     if (selection.status === 'mismatch') {
       throw new ReconciliationToolError('selection_mismatch', key);

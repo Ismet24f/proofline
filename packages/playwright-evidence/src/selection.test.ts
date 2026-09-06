@@ -3,7 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { parsePlaywrightJson } from './playwright-json.js';
-import { buildSelectionDescriptor, diffSelection } from './selection.js';
+import {
+  buildSelectionDescriptor,
+  diffProducerSelection,
+  diffReportSelection,
+  diffSelection,
+} from './selection.js';
 
 async function fixture(name: string) {
   return parsePlaywrightJson(
@@ -67,5 +72,66 @@ describe('diffSelection', () => {
     );
 
     expect(diffSelection(equalsForm, splitForm)).toEqual({ status: 'match' });
+  });
+
+  it('rejects missing observed shard metadata for a multi-shard producer', async () => {
+    const report = structuredClone(
+      await fixture('playwright-1.62-list-shard-1-of-2.json'),
+    );
+    const planned = buildSelectionDescriptor(report, '/workspace', {
+      id: 'e2e',
+      shard: { current: 1, total: 2 },
+    });
+    report.config.shard = null;
+
+    expect(
+      diffReportSelection(planned, report, '/workspace', {
+        id: 'e2e',
+        shard: { current: 1, total: 2 },
+      }),
+    ).toEqual({
+      status: 'mismatch',
+      differences: [
+        {
+          field: 'shard',
+          planned: '{"current":1,"total":2}',
+          actual: 'null',
+        },
+      ],
+    });
+  });
+
+  it('allows producer plans to differ only by shard.current', async () => {
+    const shardOne = buildSelectionDescriptor(
+      await fixture('playwright-1.62-list-shard-1-of-2.json'),
+      '/workspace',
+      { id: 'e2e', shard: { current: 1, total: 2 } },
+    );
+
+    expect(
+      diffProducerSelection(shardOne, {
+        ...shardOne,
+        shard: { current: 2, total: 2 },
+      }),
+    ).toEqual({ status: 'match' });
+  });
+
+  it('rejects different CLI project selection across one producer', async () => {
+    const shardOne = buildSelectionDescriptor(
+      await fixture('playwright-1.62-list-shard-1-of-2.json'),
+      '/workspace',
+      { id: 'e2e', shard: { current: 1, total: 2 } },
+    );
+
+    expect(
+      diffProducerSelection(shardOne, {
+        ...shardOne,
+        shard: { current: 2, total: 2 },
+        cli: [...shardOne.cli, '--project=firefox'],
+      }),
+    ).toMatchObject({
+      status: 'mismatch',
+      differences: [expect.objectContaining({ field: 'cli' })],
+    });
   });
 });
