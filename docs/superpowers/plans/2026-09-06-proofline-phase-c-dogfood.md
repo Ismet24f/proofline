@@ -39,23 +39,23 @@
 - Produces consumer JSON keys: `schemaVersion,status,repositoryAlias,verifiedCommit,playwrightVersion,freshClone,noProoflinePackage,workflowConclusion,prooflineReportSha256,rawReportSha256,verifiedAt,reviewerAlias,evidenceRef`
 - Evidence references match `E-[A-Za-z0-9_-]+`; aliases match their existing `R-`, `PR-`, `OBS-`, and `P-` prefixes.
 
-- [ ] **Step 1: Add the empty observation ledger**
+- [x] **Step 1: Add the empty observation ledger**
 
 Create `docs/validation/phase-c-observations.csv` with exactly the published header and no data rows.
 
-- [ ] **Step 2: Add the draft consumer record**
+- [x] **Step 2: Add the draft consumer record**
 
 Create `docs/validation/phase-c-consumer.json` with `schemaVersion: 1`, `status: "draft"`, and empty values for every remaining published key.
 
-- [ ] **Step 3: Document the cross-check protocol**
+- [x] **Step 3: Document the cross-check protocol**
 
 Document that a reviewer downloads the raw Playwright JSON, plan, envelope, and reconciliation output; checks topology, every planned test classification, every unexpected identity, selection, revision, and count; records exact SHA-256 values; and stores the URL mapping outside public alias-only files. State that synthetic conformance jobs do not count toward 20 PRs unless the PR itself is a genuine product change and its complete classification output is manually cross-checked.
 
-- [ ] **Step 4: Protect local evidence**
+- [x] **Step 4: Protect local evidence**
 
 Add `.proofline-evidence/` to `.gitignore`. This directory is a convenience cache only; the durable protected evidence location remains operator-owned.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .gitignore docs/validation/phase-c-observations.csv docs/validation/phase-c-consumer.json docs/validation/phase-c-dogfood.md
