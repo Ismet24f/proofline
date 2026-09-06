@@ -1,0 +1,232 @@
+name: Proofline self-test
+
+# Synthetic product conformance only. These runs are not customer installs,
+# pilot observations, or market-validation evidence.
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Scenario 3: a declared producer job is skipped before plan creation.
+  skipped-producer:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "This declared producer must never start."
+
+  assert-skipped-producer:
+    needs: [skipped-producer]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: mkdir artifacts
+      - name: Reconcile the declared skipped producer
+        uses: ./check
+        with:
+          operation: reconcile
+          producers: skipped=1
+          artifacts: artifacts
+          mode: report-only
+          out: skipped-producer.json
+      - name: Assert missing producer evidence without invented tests
+        run: >-
+          node -e "const r=require('./skipped-producer.json');
+          if(r.status!=='evidence_gaps'||r.counts.producerGaps!==1||r.counts.knownTestGaps!==0||r.tests.length!==0||r.topology[0]?.status!=='missing')
+          throw new Error(JSON.stringify(r));"
+
+  # Scenario 4: a declared matrix shard runs but omits its artifact upload.
+  missing-upload:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Plan shard
+        uses: ./check
+        with:
+          operation: plan
+          producer: missing
+          shard: ${{ matrix.shard }}/3
+          config: packages/test-fixtures/fixtures/playwright-basic/playwright.config.ts
+          out: proofline/missing-${{ matrix.shard }}-of-3/plan.json
+          playwright-args: |
+            --project=chromium
+            --grep=passes$|parameterized
+      - name: Execute shard
+        run: >-
+          pnpm exec playwright test
+          --config=packages/test-fixtures/fixtures/playwright-basic/playwright.config.ts
+          --project=chromium
+          --grep='passes$|parameterized'
+          --shard=${{ matrix.shard }}/3
+          --reporter=line,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: proofline/missing-${{ matrix.shard }}-of-3/report.json
+      - name: Collect shard
+        if: always()
+        uses: ./check
+        with:
+          operation: collect
+          producer: missing
+          shard: ${{ matrix.shard }}/3
+          plan: proofline/missing-${{ matrix.shard }}-of-3/plan.json
+          report: proofline/missing-${{ matrix.shard }}-of-3/report.json
+          out: proofline/missing-${{ matrix.shard }}-of-3/envelope.json
+      - name: Upload only two of three declared shards
+        if: ${{ always() && matrix.shard != 3 }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: proofline-missing-${{ matrix.shard }}
+          path: proofline/
+          if-no-files-found: error
+
+  assert-missing-upload:
+    needs: [missing-upload]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the two uploaded shards
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: proofline-missing-*
+          path: artifacts
+          merge-multiple: true
+      - name: Reconcile the three-shard manifest
+        uses: ./check
+        with:
+          operation: reconcile
+          producers: missing=3
+          artifacts: artifacts
+          mode: report-only
+          out: missing-upload.json
+      - name: Assert only shard three is missing
+        run: >-
+          node -e "const r=require('./missing-upload.json');
+          const gaps=r.topology.filter(x=>x.status!=='received');
+          if(r.status!=='evidence_gaps'||r.counts.producerGaps!==1||gaps.length!==1||gaps[0].producer.shard.current!==3||gaps[0].producer.shard.total!==3)
+          throw new Error(JSON.stringify(r));"
+
+  # Scenario 12: Playwright is interrupted after one runtime skip.
+  interrupted-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @proofline/test-fixtures build
+      - name: Plan the interruption fixture
+        uses: ./check
+        with:
+          operation: plan
+          producer: interrupted
+          config: packages/test-fixtures/fixtures/playwright-results/playwright.config.ts
+          out: proofline/interrupted-1-of-1/plan.json
+          playwright-args: |
+            packages/test-fixtures/fixtures/playwright-results/tests/sigint.spec.ts
+            --project=chromium
+      - name: Interrupt the owned Playwright child through the shared harness
+        run: >-
+          node packages/test-fixtures/scripts/run-interrupted-playwright.mjs
+          proofline/interrupted-1-of-1/report.json
+      - name: Collect partial execution evidence
+        uses: ./check
+        with:
+          operation: collect
+          producer: interrupted
+          plan: proofline/interrupted-1-of-1/plan.json
+          report: proofline/interrupted-1-of-1/report.json
+          out: proofline/interrupted-1-of-1/envelope.json
+      - name: Reconcile interrupted execution
+        uses: ./check
+        with:
+          operation: reconcile
+          producers: interrupted=1
+          artifacts: proofline
+          mode: report-only
+          out: interrupted-run.json
+      - name: Assert attempt-based interruption classifications
+        run: >-
+          node -e "const r=require('./interrupted-run.json');
+          const byTitle=Object.fromEntries(r.tests.map(x=>[x.identity.titlePath.at(-1),x.classification]));
+          if(r.status!=='evidence_gaps'||r.counts.runtimeSkipped!==1||r.counts.incomplete!==2||byTitle['runtime skip before signal']!=='runtime_skipped'||byTitle['in flight at signal']!=='incomplete'||byTitle['never started']!=='incomplete')
+          throw new Error(JSON.stringify(r));"
+
+  # Scenario 20: planning and execution select different projects.
+  selection-mismatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Plan Chromium
+        uses: ./check
+        with:
+          operation: plan
+          producer: mismatch
+          config: packages/test-fixtures/fixtures/playwright-basic/playwright.config.ts
+          out: proofline/mismatch-1-of-1/plan.json
+          playwright-args: |
+            --project=chromium
+            --grep=passes$
+      - name: Execute Firefox selection
+        run: >-
+          pnpm exec playwright test
+          --config=packages/test-fixtures/fixtures/playwright-basic/playwright.config.ts
+          --project=firefox
+          --grep=passes$
+          --reporter=json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: proofline/mismatch-1-of-1/report.json
+      - name: Collect the diagnostic mismatch envelope
+        id: collect
+        continue-on-error: true
+        uses: ./check
+        with:
+          operation: collect
+          producer: mismatch
+          plan: proofline/mismatch-1-of-1/plan.json
+          report: proofline/mismatch-1-of-1/report.json
+          out: proofline/mismatch-1-of-1/envelope.json
+      - name: Reconcile the diagnostic envelope
+        id: reconcile
+        continue-on-error: true
+        uses: ./check
+        with:
+          operation: reconcile
+          producers: mismatch=1
+          artifacts: proofline
+          mode: report-only
+          out: selection-mismatch.json
+      - name: Assert tool-error outcomes and diagnostic report
+        env:
+          COLLECT_OUTCOME: ${{ steps.collect.outcome }}
+          RECONCILE_OUTCOME: ${{ steps.reconcile.outcome }}
+        run: >-
+          node -e "const r=require('./selection-mismatch.json');
+          const e=require('./proofline/mismatch-1-of-1/envelope.json');
+          if(process.env.COLLECT_OUTCOME!=='failure'||process.env.RECONCILE_OUTCOME!=='failure'||e.selectionCheck.status!=='mismatch'||r.status!=='tool_error'||r.exitDecision.code!==2||!r.exitDecision.reasonCodes.includes('selection_mismatch'))
+          throw new Error(JSON.stringify({r,e,env:process.env}));"

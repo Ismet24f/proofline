@@ -6,9 +6,15 @@ A normal GitHub rollup job can catch failed, cancelled, or skipped jobs. It cann
 
 ## Current status
 
-Proofline v0.1 is being implemented as an open-source, local-only GitHub Action with three operations: `plan`, `collect`, and `reconcile`. The repository currently contains the independently reviewed specification, implementation plan, and Phase 0 discovery foundation. The consumable action and `check/dist` bundle do not exist yet.
+Proofline v0.1 is an unreleased open-source, local-only GitHub Action with three operations: `plan`, `collect`, and `reconcile`. The action and its committed `check/dist` bundle are implemented and under release-candidate validation. Do not depend on `v0.1.0` until that tag is published.
 
-The action will run entirely on the GitHub runner. Consumers will not install a Proofline npm package, provide a token, add Proofline annotations, or send test data to a hosted service.
+The action runs entirely on the GitHub runner. Consumers do not install a Proofline npm package, provide a token, add Proofline annotations, or send test data to a hosted service.
+
+## Try it in a workflow
+
+The [consumer workflow](examples/consumer-workflow.yml) is the copy-paste integration reference. It plans each of three Playwright shards, collects evidence even after a test failure, uploads each shard independently, and reconciles all declared shards in one required job.
+
+Configure both the Playwright job and `Proofline completeness` as required checks. The Playwright job answers whether tests passed; Proofline answers whether every planned test produced trustworthy evidence. Until `v0.1.0` is released, pin a reviewed Proofline commit rather than copying the prospective tag from the example.
 
 ## What v0.1 will report
 
@@ -27,7 +33,9 @@ Proofline says **planned**, never **should have run**. It does not determine whe
 
 A job skipped by `if:` creates no plan fragment. Proofline can report `no_evidence` for the declared producer or shard, but it cannot name tests that were never discovered. Workflow-level `paths:` or `branches:` filtering is outside v0.1 because Proofline cannot inspect a workflow that never started.
 
-Playwright 1.62.1 ignores a config-defined JSON reporter `outputFile` when `--reporter=json` is supplied on the command line and writes JSON to stdout instead. Consumer workflows must set `PLAYWRIGHT_JSON_OUTPUT_FILE` to the same report path passed to Proofline. The future example workflow will include this explicitly.
+Playwright 1.62.1 ignores a config-defined JSON reporter `outputFile` when `--reporter=json` is supplied on the command line and writes JSON to stdout instead. Consumer workflows must set `PLAYWRIGHT_JSON_OUTPUT_FILE` to the same report path passed to Proofline. The example workflow does this explicitly; teams that already define JSON in the Playwright config must still set the environment variable when the CLI overrides reporters.
+
+Proofline's compatibility contract is currently Playwright 1.62.x only. Freeze that minor in a pilot lockfile and validate a new Playwright minor against the compatibility matrix before upgrading.
 
 ## Development
 
@@ -47,4 +55,4 @@ The authoritative contracts are the [v0.1 specification](docs/superpowers/specs/
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Bundled dependency attribution is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and vulnerability reporting guidance is in [SECURITY.md](SECURITY.md).
