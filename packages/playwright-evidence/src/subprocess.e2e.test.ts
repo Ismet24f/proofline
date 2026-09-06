@@ -366,7 +366,10 @@ describe('real Playwright evidence workflows', () => {
           'proofline/e2e-1-of-1/report.json',
         ),
       },
-      signalAfterMs: 1_500,
+      signalOnStdout: {
+        marker: 'PROOFLINE_IN_FLIGHT',
+        timeoutMs: 15_000,
+      },
     });
     expect(execution.code).toBe(130);
     expect(execution.signal).toBeNull();

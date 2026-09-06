@@ -9,6 +9,10 @@ export interface RunCommandOptions {
   args: readonly string[];
   env?: NodeJS.ProcessEnv;
   signalAfterMs?: number;
+  signalOnStdout?: {
+    marker: string;
+    timeoutMs: number;
+  };
 }
 
 export interface RunCommandResult {
@@ -22,6 +26,22 @@ export function runCommand(
   options: RunCommandOptions,
 ): Promise<RunCommandResult> {
   return new Promise((resolve, reject) => {
+    const signalOnStdout = options.signalOnStdout;
+    if (options.signalAfterMs !== undefined && signalOnStdout !== undefined) {
+      throw new Error(
+        'signalAfterMs and signalOnStdout cannot be used together',
+      );
+    }
+    if (
+      signalOnStdout !== undefined &&
+      (signalOnStdout.marker.length === 0 ||
+        !Number.isSafeInteger(signalOnStdout.timeoutMs) ||
+        signalOnStdout.timeoutMs < 1)
+    ) {
+      throw new Error(
+        'signalOnStdout requires a non-empty marker and positive timeoutMs',
+      );
+    }
     const child = spawn(options.command, options.args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
@@ -33,14 +53,16 @@ export function runCommand(
     let stdoutBytes = 0;
     let stderrBytes = 0;
     let settled = false;
-    const signalTimer =
-      options.signalAfterMs === undefined
-        ? undefined
-        : setTimeout(() => child.kill('SIGINT'), options.signalAfterMs);
+    let signalSent = false;
+    let signalTimer: NodeJS.Timeout | undefined;
+    let markerTimer: NodeJS.Timeout | undefined;
 
-    const clearSignalTimer = (): void => {
+    const clearTimers = (): void => {
       if (signalTimer !== undefined) {
         clearTimeout(signalTimer);
+      }
+      if (markerTimer !== undefined) {
+        clearTimeout(markerTimer);
       }
     };
     const fail = (error: Error): void => {
@@ -48,10 +70,28 @@ export function runCommand(
         return;
       }
       settled = true;
-      clearSignalTimer();
+      clearTimers();
       child.kill('SIGKILL');
       reject(error);
     };
+    const sendSignal = (): void => {
+      if (signalSent) return;
+      signalSent = true;
+      child.kill('SIGINT');
+    };
+
+    if (options.signalAfterMs !== undefined) {
+      signalTimer = setTimeout(sendSignal, options.signalAfterMs);
+    }
+    if (signalOnStdout !== undefined) {
+      markerTimer = setTimeout(() => {
+        fail(
+          new Error(
+            `subprocess stdout marker ${JSON.stringify(signalOnStdout.marker)} was not observed within ${String(signalOnStdout.timeoutMs)}ms`,
+          ),
+        );
+      }, signalOnStdout.timeoutMs);
+    }
 
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
       stdoutBytes += Buffer.byteLength(chunk, 'utf8');
@@ -64,6 +104,14 @@ export function runCommand(
         return;
       }
       stdout += chunk;
+      if (
+        signalOnStdout !== undefined &&
+        stdout.includes(signalOnStdout.marker)
+      ) {
+        if (markerTimer !== undefined) clearTimeout(markerTimer);
+        markerTimer = undefined;
+        sendSignal();
+      }
     });
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
       if (stderrBytes >= MAX_STDERR_BYTES) {
@@ -82,7 +130,7 @@ export function runCommand(
         return;
       }
       settled = true;
-      clearSignalTimer();
+      clearTimers();
       resolve({ code, signal, stdout, stderr });
     });
   });

@@ -26,7 +26,10 @@ const result = await runCommand({
     ...process.env,
     PLAYWRIGHT_JSON_OUTPUT_FILE: resolve(report),
   },
-  signalAfterMs: 1_500,
+  signalOnStdout: {
+    marker: 'PROOFLINE_IN_FLIGHT',
+    timeoutMs: 15_000,
+  },
 });
 
 process.stdout.write(result.stdout);

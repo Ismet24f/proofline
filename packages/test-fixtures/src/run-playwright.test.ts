@@ -22,7 +22,7 @@ describe('runCommand', () => {
     });
   });
 
-  it('sends SIGINT only to the spawned child after the requested delay', async () => {
+  it('sends SIGINT only after the spawned child emits the readiness marker', async () => {
     const result = await runCommand({
       cwd: process.cwd(),
       command: process.execPath,
@@ -30,7 +30,7 @@ describe('runCommand', () => {
         '-e',
         "process.stdout.write('ready'); setInterval(() => {}, 1_000);",
       ],
-      signalAfterMs: 100,
+      signalOnStdout: { marker: 'ready', timeoutMs: 1_000 },
     });
 
     expect(result).toEqual({
@@ -39,6 +39,19 @@ describe('runCommand', () => {
       stdout: 'ready',
       stderr: '',
     });
+  });
+
+  it('rejects and kills the child when the readiness marker is not observed', async () => {
+    await expect(
+      runCommand({
+        cwd: process.cwd(),
+        command: process.execPath,
+        args: ['-e', 'setInterval(() => {}, 1_000);'],
+        signalOnStdout: { marker: 'never-emitted', timeoutMs: 100 },
+      }),
+    ).rejects.toThrow(
+      'subprocess stdout marker "never-emitted" was not observed within 100ms',
+    );
   });
 
   it('rejects output larger than the 50 MB stdout bound', async () => {
