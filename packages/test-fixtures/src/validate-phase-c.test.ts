@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,10 @@ const SCRIPT = resolve(
 const REPOSITORY_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../..',
+);
+const PUBLIC_OBSERVATIONS = resolve(
+  REPOSITORY_ROOT,
+  'docs/validation/phase-c-observations.csv',
 );
 const workspaces: string[] = [];
 
@@ -147,7 +151,9 @@ afterEach(() => {
 });
 
 describe('validate-phase-c', () => {
-  it('keeps the current public contracts observing at one PR with a verified consumer', () => {
+  it('keeps every current public observation qualified and matched with a verified consumer', () => {
+    const publicObservationCount =
+      readFileSync(PUBLIC_OBSERVATIONS, 'utf8').trimEnd().split('\n').length - 1;
     const output = execFileSync(process.execPath, [SCRIPT], {
       cwd: REPOSITORY_ROOT,
       encoding: 'utf8',
@@ -156,9 +162,9 @@ describe('validate-phase-c', () => {
       schemaVersion: 1,
       outcome: 'PHASE_C_OBSERVING',
       counts: {
-        distinctPullRequests: 1,
-        qualifyingPullRequests: 1,
-        matchedObservations: 1,
+        distinctPullRequests: publicObservationCount,
+        qualifyingPullRequests: publicObservationCount,
+        matchedObservations: publicObservationCount,
         resolvedMismatchObservations: 0,
         unresolvedMismatchObservations: 0,
         toolErrorObservations: 0,
